@@ -16,7 +16,7 @@ from app.schemas import (
     TaskExecutionSubmit,
     TaskUpdate,
 )
-from app.services import dify_client, max_bridge, memo, sheet_client
+from app.services import dify_client, max_bridge, memo
 
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
 log = get_logger("tasks")
@@ -49,7 +49,6 @@ async def update_task(task_id: str, body: TaskUpdate, db: Session = Depends(get_
         setattr(task, field, value)
     db.commit()
     db.refresh(task)
-    await sheet_client.upsert_task(task)
     return task
 
 
@@ -63,7 +62,6 @@ async def submit_execution(task_id: str, body: TaskExecutionSubmit, db: Session 
     task.status = "Требует проверки"
     db.commit()
     db.refresh(task)
-    await sheet_client.upsert_task(task)
     return task
 
 
@@ -83,9 +81,6 @@ async def confirm_task(task_id: str, body: TaskConfirm, db: Session = Depends(ge
         task.memo_path = memo_path
     db.commit()
     db.refresh(task)
-
-    # Реестр в Google Таблице: строка зеленеет.
-    await sheet_client.mark_completed(task)
 
     # Опционально уведомляем legacy-мост MAX (microservice).
     if body.notify_max and max_bridge.enabled():

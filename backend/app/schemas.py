@@ -45,6 +45,7 @@ class TranscriptionListItem(BaseModel):
 
 class TaskDTO(BaseModel):
     id: str
+    protocol_id: str
     assignment: str
     responsible: str
     department: str
@@ -56,6 +57,7 @@ class TaskDTO(BaseModel):
     max_username: str = ""
     completion_text: str = ""
     closed_at: datetime | None = None
+    created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
 

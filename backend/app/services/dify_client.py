@@ -108,9 +108,13 @@ async def run_command(
         return DifyResult(answer="", raw={"error": "dify app_api_key not configured"})
 
     cfg = settings.dify
-    # Команду дублируем в начало query, чтобы Question Classifier в workflow
-    # маршрутизировал детерминированно (он читает sys.query, не inputs).
-    routed_query = f"{command}\n\n{query}" if command else query
+    # Question Classifier маршрутизирует по sys.query. Большие тексты (транскрипты)
+    # не кладём в query: Dify часто отвечает 400 на длинный query. Полный текст
+    # передаётся через inputs, а query остаётся короткой командой/вопросом.
+    if command:
+        routed_query = command if len(query) > 4000 else f"{command}\n\n{query}"
+    else:
+        routed_query = query
     payload = {
         "inputs": {"command": command, **(inputs or {})},
         "query": routed_query,
@@ -134,7 +138,10 @@ async def run_command(
                 result.files.append(await _download(client, url, name_hint))
             return result
     except Exception as exc:  # каркас не должен падать из-за внешнего сервиса
-        log.warning("Dify run_command(%s) failed: %s", command, exc)
+        detail = ""
+        if isinstance(exc, httpx.HTTPStatusError):
+            detail = f" response={exc.response.text[:1000]}"
+        log.warning("Dify run_command(%s) failed: %s%s", command, exc, detail)
         return DifyResult(answer="", raw={"error": str(exc)})
 
 

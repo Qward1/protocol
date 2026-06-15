@@ -65,14 +65,6 @@ class MaxBridgeSettings(BaseModel):
     api_key: str = ""
 
 
-class GoogleSheetsSettings(BaseModel):
-    # Реестр поручений в Google Таблице через Apps Script Web App.
-    enabled: bool = False
-    webapp_url: str = ""                # URL развёрнутого Apps Script (.../exec)
-    script_token: str = ""             # общий токен, который проверяет скрипт
-    request_timeout: int = 30
-
-
 class MediaSettings(BaseModel):
     ffmpeg_path: str = "ffmpeg"
 
@@ -133,7 +125,6 @@ class Settings(BaseModel):
     openrouter: OpenRouterSettings = Field(default_factory=OpenRouterSettings)
     dify: DifySettings = Field(default_factory=DifySettings)
     max: MaxBridgeSettings = Field(default_factory=MaxBridgeSettings)
-    google_sheets: GoogleSheetsSettings = Field(default_factory=GoogleSheetsSettings)
     media: MediaSettings = Field(default_factory=MediaSettings)
     security: SecuritySettings = Field(default_factory=SecuritySettings)
     upload: UploadSettings = Field(default_factory=UploadSettings)

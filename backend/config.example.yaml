@@ -87,11 +87,5 @@ max:
   base_url: ""
   api_key: ""
 
-google_sheets:
-  enabled: false                    # реестр поручений в Google Таблице (Apps Script Web App)
-  webapp_url: ""                    # URL Apps Script (.../exec)
-  script_token: ""                  # токен, который проверяет скрипт
-  request_timeout: 30
-
 media:
   ffmpeg_path: ffmpeg               # путь к ffmpeg (для видео -> аудио)

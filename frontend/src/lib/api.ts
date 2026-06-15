@@ -36,6 +36,7 @@ export interface TranscriptionListItem {
 
 export interface Task {
   id: string;
+  protocol_id: string;
   assignment: string;
   responsible: string;
   department: string;
@@ -45,6 +46,9 @@ export interface Task {
   reason_comment: string;
   confidence: number;
   max_username: string;
+  completion_text: string;
+  closed_at?: string | null;
+  created_at: string;
 }
 
 export interface Protocol {

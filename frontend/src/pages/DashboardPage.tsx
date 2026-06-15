@@ -1,18 +1,58 @@
-import { useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import { ListChecks, Clock, AlertTriangle, CheckCircle2, Upload, Check } from "lucide-react";
+import {
+  AlertTriangle,
+  Check,
+  CheckCircle2,
+  Clock,
+  Edit3,
+  ExternalLink,
+  FileCheck2,
+  ListChecks,
+  Save,
+  Search,
+  Send,
+  Upload,
+  X,
+} from "lucide-react";
 import clsx from "clsx";
-import { api } from "@/lib/api";
+import { api, type Task } from "@/lib/api";
 import { Card, PageHeader, Empty, Spinner, Badge } from "@/components/ui";
-import { statusColor } from "@/lib/utils";
+import { fmtDate, statusColor } from "@/lib/utils";
 
 const FILTERS = ["Все", "Новое", "Требует проверки", "Выполнено"] as const;
+const STATUS_OPTIONS = ["Новое", "Требует проверки", "Выполнено"] as const;
+
+type Filter = (typeof FILTERS)[number];
+type Draft = Pick<Task, "assignment" | "responsible" | "department" | "deadline" | "status" | "max_username">;
 
 export default function DashboardPage() {
-  const [filter, setFilter] = useState<(typeof FILTERS)[number]>("Все");
+  const [filter, setFilter] = useState<Filter>("Все");
+  const [query, setQuery] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [draft, setDraft] = useState<Draft | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [completionText, setCompletionText] = useState<Record<string, string>>({});
   const qc = useQueryClient();
+
   const { data: tasks, isLoading } = useQuery({ queryKey: ["tasks"], queryFn: () => api.listTasks() });
+
+  const update = useMutation({
+    mutationFn: ({ id, patch }: { id: string; patch: Partial<Task> }) => api.updateTask(id, patch),
+    onSuccess: () => {
+      setEditingId(null);
+      setDraft(null);
+      qc.invalidateQueries({ queryKey: ["tasks"] });
+    },
+  });
+  const submitExecution = useMutation({
+    mutationFn: ({ id, text }: { id: string; text: string }) => api.submitExecution(id, text),
+    onSuccess: (_, vars) => {
+      setCompletionText((prev) => ({ ...prev, [vars.id]: "" }));
+      qc.invalidateQueries({ queryKey: ["tasks"] });
+    },
+  });
   const confirm = useMutation({
     mutationFn: (id: string) => api.confirmTask(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["tasks"] }),
@@ -25,13 +65,46 @@ export default function DashboardPage() {
     done: tasks?.filter((t) => t.status === "Выполнено").length ?? 0,
   };
 
-  const filtered = (tasks ?? []).filter((t) => filter === "Все" || t.status === filter);
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return (tasks ?? []).filter((task) => {
+      const statusMatch = filter === "Все" || task.status === filter;
+      const queryMatch =
+        !q ||
+        [task.assignment, task.responsible, task.department, task.deadline, task.completion_text]
+          .join(" ")
+          .toLowerCase()
+          .includes(q);
+      return statusMatch && queryMatch;
+    });
+  }, [filter, query, tasks]);
+
+  function startEdit(task: Task) {
+    setEditingId(task.id);
+    setDraft({
+      assignment: task.assignment,
+      responsible: task.responsible,
+      department: task.department,
+      deadline: task.deadline,
+      status: task.status,
+      max_username: task.max_username,
+    });
+  }
+
+  function setDraftField<K extends keyof Draft>(field: K, value: Draft[K]) {
+    setDraft((current) => (current ? { ...current, [field]: value } : current));
+  }
+
+  function saveEdit(task: Task) {
+    if (!draft) return;
+    update.mutate({ id: task.id, patch: draft });
+  }
 
   return (
     <div>
       <PageHeader
-        title="Контроль исполнения"
-        subtitle="Поручения из протоколов: статусы, сроки, ответственные."
+        title="Реестр поручений"
+        subtitle="Задачи хранятся в приложении: ответственные, сроки, статусы и подтверждение исполнения."
         actions={
           <Link to="/upload" className="btn-primary">
             <Upload className="h-4 w-4" /> Новая запись
@@ -42,23 +115,34 @@ export default function DashboardPage() {
       <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-4">
         <Stat icon={ListChecks} label="Всего" value={counts.total} tint="text-accent" />
         <Stat icon={Clock} label="Новые" value={counts.new} tint="text-sky-500" />
-        <Stat icon={AlertTriangle} label="Требуют проверки" value={counts.review} tint="text-amber-500" />
+        <Stat icon={AlertTriangle} label="На проверке" value={counts.review} tint="text-amber-500" />
         <Stat icon={CheckCircle2} label="Выполнено" value={counts.done} tint="text-emerald-500" />
       </div>
 
-      <div className="mb-4 flex gap-2">
-        {FILTERS.map((f) => (
-          <button
-            key={f}
-            onClick={() => setFilter(f)}
-            className={clsx(
-              "rounded-full px-3 py-1 text-sm transition-colors",
-              filter === f ? "bg-accent text-accent-fg" : "border border-border hover:bg-elevated",
-            )}
-          >
-            {f}
-          </button>
-        ))}
+      <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex flex-wrap gap-2">
+          {FILTERS.map((f) => (
+            <button
+              key={f}
+              onClick={() => setFilter(f)}
+              className={clsx(
+                "rounded-lg border px-3 py-2 text-sm transition-colors",
+                filter === f ? "border-accent bg-accent text-accent-fg" : "border-border bg-surface hover:bg-elevated",
+              )}
+            >
+              {f}
+            </button>
+          ))}
+        </div>
+        <label className="relative block w-full lg:w-80">
+          <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted" />
+          <input
+            className="input pl-9"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Поиск по поручениям"
+          />
+        </label>
       </div>
 
       {isLoading ? (
@@ -70,41 +154,206 @@ export default function DashboardPage() {
         />
       ) : (
         <Card className="overflow-hidden p-0">
-          <table className="w-full text-sm">
-            <thead className="border-b border-border bg-elevated text-left text-xs uppercase text-muted">
-              <tr>
-                <th className="px-4 py-3">Поручение</th>
-                <th className="px-4 py-3">Ответственный</th>
-                <th className="px-4 py-3">Срок</th>
-                <th className="px-4 py-3">Статус</th>
-                <th className="px-4 py-3"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((t) => (
-                <tr key={t.id} className="border-b border-border/50 last:border-0 hover:bg-elevated/50">
-                  <td className="max-w-md px-4 py-3">{t.assignment}</td>
-                  <td className="px-4 py-3">{t.responsible || "—"}</td>
-                  <td className="px-4 py-3 text-muted">{t.deadline || "—"}</td>
-                  <td className="px-4 py-3">
-                    <Badge className={clsx("border-transparent", statusColor(t.status))}>{t.status}</Badge>
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    {t.status !== "Выполнено" && (
-                      <button
-                        className="btn-ghost px-2 py-1 text-xs"
-                        disabled={confirm.isPending}
-                        onClick={() => confirm.mutate(t.id)}
-                        title="Подтвердить выполнение (руководитель)"
-                      >
-                        <Check className="h-3.5 w-3.5" /> Подтвердить
-                      </button>
-                    )}
-                  </td>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[980px] text-sm">
+              <thead className="border-b border-border bg-elevated text-left text-xs uppercase text-muted">
+                <tr>
+                  <th className="px-4 py-3">Поручение</th>
+                  <th className="px-4 py-3">Ответственный</th>
+                  <th className="px-4 py-3">Направление</th>
+                  <th className="px-4 py-3">Срок</th>
+                  <th className="px-4 py-3">Статус</th>
+                  <th className="px-4 py-3">Действия</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {filtered.map((task) => {
+                  const isEditing = editingId === task.id && draft;
+                  const isExpanded = expandedId === task.id;
+                  return (
+                    <Fragment key={task.id}>
+                      <tr className="border-b border-border/50 hover:bg-elevated/50">
+                        <td className="w-[34%] px-4 py-3 align-top">
+                          {isEditing ? (
+                            <textarea
+                              className="input min-h-20 resize-y"
+                              value={draft.assignment}
+                              onChange={(event) => setDraftField("assignment", event.target.value)}
+                            />
+                          ) : (
+                            <button
+                              className="line-clamp-3 text-left font-medium hover:text-accent"
+                              onClick={() => setExpandedId(isExpanded ? null : task.id)}
+                            >
+                              {task.assignment || "Без текста поручения"}
+                            </button>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 align-top">
+                          {isEditing ? (
+                            <input
+                              className="input"
+                              value={draft.responsible}
+                              onChange={(event) => setDraftField("responsible", event.target.value)}
+                            />
+                          ) : (
+                            task.responsible || "—"
+                          )}
+                        </td>
+                        <td className="px-4 py-3 align-top">
+                          {isEditing ? (
+                            <input
+                              className="input"
+                              value={draft.department}
+                              onChange={(event) => setDraftField("department", event.target.value)}
+                            />
+                          ) : (
+                            task.department || "—"
+                          )}
+                        </td>
+                        <td className="px-4 py-3 align-top text-muted">
+                          {isEditing ? (
+                            <input
+                              className="input"
+                              value={draft.deadline}
+                              onChange={(event) => setDraftField("deadline", event.target.value)}
+                            />
+                          ) : (
+                            task.deadline || "—"
+                          )}
+                        </td>
+                        <td className="px-4 py-3 align-top">
+                          {isEditing ? (
+                            <select
+                              className="input"
+                              value={draft.status}
+                              onChange={(event) => setDraftField("status", event.target.value)}
+                            >
+                              {STATUS_OPTIONS.map((status) => (
+                                <option key={status} value={status}>
+                                  {status}
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <Badge className={clsx("border-transparent", statusColor(task.status))}>
+                              {task.status}
+                            </Badge>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 align-top">
+                          <div className="flex flex-wrap gap-2">
+                            {isEditing ? (
+                              <>
+                                <button className="btn-primary px-2 py-1" onClick={() => saveEdit(task)} title="Сохранить">
+                                  <Save className="h-4 w-4" />
+                                </button>
+                                <button
+                                  className="btn-ghost px-2 py-1"
+                                  onClick={() => {
+                                    setEditingId(null);
+                                    setDraft(null);
+                                  }}
+                                  title="Отменить"
+                                >
+                                  <X className="h-4 w-4" />
+                                </button>
+                              </>
+                            ) : (
+                              <>
+                                <button className="btn-ghost px-2 py-1" onClick={() => startEdit(task)} title="Редактировать">
+                                  <Edit3 className="h-4 w-4" />
+                                </button>
+                                <button
+                                  className="btn-ghost px-2 py-1"
+                                  onClick={() => setExpandedId(isExpanded ? null : task.id)}
+                                  title="Исполнение"
+                                >
+                                  <FileCheck2 className="h-4 w-4" />
+                                </button>
+                                <Link className="btn-ghost px-2 py-1" to={`/protocols/${task.protocol_id}`} title="Открыть протокол">
+                                  <ExternalLink className="h-4 w-4" />
+                                </Link>
+                                {task.status !== "Выполнено" && (
+                                  <button
+                                    className="btn-ghost px-2 py-1"
+                                    disabled={confirm.isPending}
+                                    onClick={() => confirm.mutate(task.id)}
+                                    title="Подтвердить выполнение"
+                                  >
+                                    <Check className="h-4 w-4" />
+                                  </button>
+                                )}
+                              </>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                      {isExpanded && (
+                        <tr className="border-b border-border/50 bg-elevated/40">
+                          <td colSpan={6} className="px-4 py-4">
+                            <div className="grid gap-4 lg:grid-cols-[1.2fr_1fr]">
+                              <div className="space-y-3">
+                                <Meta label="Создано" value={fmtDate(task.created_at)} />
+                                <Meta label="MAX" value={task.max_username || "—"} />
+                                <Meta label="Закрыто" value={task.closed_at ? fmtDate(task.closed_at) : "—"} />
+                                {task.source_fragment && (
+                                  <div>
+                                    <div className="text-xs font-medium uppercase text-muted">Фрагмент-источник</div>
+                                    <p className="mt-1 text-sm italic text-muted">«{task.source_fragment}»</p>
+                                  </div>
+                                )}
+                                {task.reason_comment && (
+                                  <div>
+                                    <div className="text-xs font-medium uppercase text-muted">Комментарий назначения</div>
+                                    <p className="mt-1 text-sm text-muted">{task.reason_comment}</p>
+                                  </div>
+                                )}
+                              </div>
+                              <div className="space-y-2">
+                                <div className="text-xs font-medium uppercase text-muted">Что сделано</div>
+                                <textarea
+                                  className="input min-h-28 resize-y"
+                                  value={completionText[task.id] ?? task.completion_text ?? ""}
+                                  onChange={(event) =>
+                                    setCompletionText((prev) => ({ ...prev, [task.id]: event.target.value }))
+                                  }
+                                  placeholder="Кратко опишите результат выполнения"
+                                />
+                                <div className="flex justify-end gap-2">
+                                  <button
+                                    className="btn-primary"
+                                    disabled={submitExecution.isPending}
+                                    onClick={() =>
+                                      submitExecution.mutate({
+                                        id: task.id,
+                                        text: completionText[task.id] ?? task.completion_text ?? "",
+                                      })
+                                    }
+                                  >
+                                    <Send className="h-4 w-4" /> На проверку
+                                  </button>
+                                  {task.status !== "Выполнено" && (
+                                    <button
+                                      className="btn-ghost"
+                                      disabled={confirm.isPending}
+                                      onClick={() => confirm.mutate(task.id)}
+                                    >
+                                      <Check className="h-4 w-4" /> Подтвердить
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </Card>
       )}
     </div>
@@ -132,5 +381,14 @@ function Stat({
         <div className="text-xs text-muted">{label}</div>
       </div>
     </Card>
+  );
+}
+
+function Meta({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="grid grid-cols-[110px_1fr] gap-3 text-sm">
+      <div className="text-xs font-medium uppercase text-muted">{label}</div>
+      <div>{value}</div>
+    </div>
   );
 }

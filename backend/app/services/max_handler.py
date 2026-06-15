@@ -6,7 +6,7 @@
 3. Сотрудник присылает текст -> статус «Требует проверки», руководителю уходит
    кнопка «Подтвердить выполнение» (``approve:<task_id>``).
 4. Руководитель подтверждает -> задача «Выполнено», формируется справка (Dify или
-   локальный DOCX), строка в Google Таблице зеленеет, DOCX уходит в тот же чат.
+   локальный DOCX), DOCX уходит в тот же чат.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 from app.logging_config import get_logger
 from app.models import ConfirmationSession, Task
 from app.config import settings
-from app.services import memo, sheet_client
+from app.services import memo
 from app.services.max_client import MaxClient, confirmation_keyboard, manager_approval_keyboard
 from app.services.reminders import now_local_naive
 
@@ -172,9 +172,6 @@ async def _handle_manager_approval(db: Session, update: dict, payload: str) -> d
     db.commit()
     db.refresh(task)
 
-    # Реестр в Google Таблице: строка зеленеет.
-    await sheet_client.mark_completed(task)
-
     chat_id = _chat_id(update)
     await MaxClient().answer_callback(_callback_id(update), notification="Выполнение подтверждено")
     await MaxClient().send_message(f"{APPROVED_TEXT}\n{_review(task)}", chat_id=chat_id)
@@ -224,7 +221,6 @@ async def _handle_message(db: Session, update: dict) -> dict:
     db.commit()
     db.refresh(task)
 
-    await sheet_client.upsert_task(task)
     await MaxClient().send_message(
         f"{WAIT_MANAGER_TEXT}\n\n{APPROVAL_TEXT}\n{_review(task)}",
         chat_id=_chat_id(update),

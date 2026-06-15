@@ -121,7 +121,6 @@ def health() -> dict:
         "asr_model": settings.openrouter.asr_model,
         "auth_required": settings.security.require_auth,
         "max_bot": settings.max.enabled,
-        "google_sheets": settings.google_sheets.enabled,
         "execution_control": settings.execution_control.enabled,
     }
 

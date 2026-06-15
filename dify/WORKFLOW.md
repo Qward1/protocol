@@ -9,7 +9,7 @@
 
 Backend (`backend/app/services/dify_client.py`) вызывает `/chat-messages`, передавая:
 - `inputs.command` — точное имя команды;
-- ту же команду в начале `query` (Question Classifier читает `sys.query`, не `inputs`).
+- короткий `query` с командой маршрутизации (Question Classifier читает `sys.query`, не `inputs`).
 
 Имена команд должны совпадать с `backend/config.yaml → dify.command_*` и классами ноды `classifier`:
 
