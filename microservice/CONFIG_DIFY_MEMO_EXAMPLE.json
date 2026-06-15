@@ -1,0 +1,8 @@
+{
+  "dify_memo_base_url": "https://dify.t1v.scibox.tech/v1",
+  "dify_memo_api_key": "ВСТАВЬ_API_KEY_ОТ_НУЖНОГО_CHATFLOW",
+  "dify_memo_response_mode": "streaming",
+  "dify_memo_user": "execution-control-service",
+  "dify_memo_trigger_message": "Создание справки(служебной записки)",
+  "dify_memo_fallback_local": true
+}

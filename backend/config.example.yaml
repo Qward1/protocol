@@ -1,0 +1,77 @@
+# Конфигурация backend «Цифровой Офис».
+# Скопируйте в config.yaml и заполните секреты. Формат — только YAML, без .env.
+
+service_name: digital-office-backend
+host: 0.0.0.0
+port: 8000
+database_url: sqlite:///./storage/app.db
+storage_dir: ./storage
+log_level: INFO
+cors_origins:
+  - http://localhost:5173
+  - http://127.0.0.1:5173
+
+security:
+  api_key: ""                       # ключ для изменяющих запросов
+  require_auth: false               # true -> POST/PUT/PATCH/DELETE требуют X-Api-Key
+
+upload:
+  max_mb: 1024
+  allowed_extensions:
+    - .mp3
+    - .wav
+    - .m4a
+    - .ogg
+    - .flac
+    - .aac
+    - .opus
+    - .mp4
+    - .mov
+    - .mkv
+    - .avi
+    - .webm
+    - .m4v
+
+export:
+  pdf_font_path: ""                 # TTF с кириллицей; пусто = автоопределение (Arial/DejaVu)
+
+qa:
+  max_context_chars: 24000          # обрезка контекста под промпт
+
+execution_control:
+  enabled: false                    # дублировать поручения во внешний сервис задач
+  bulk_url: ""                      # напр. https://.../api/tasks/bulk
+  api_key: ""
+  request_timeout: 30
+
+openrouter:
+  base_url: https://openrouter.ai/api/v1
+  api_key: ""                       # ключ OpenRouter
+  asr_model: google/gemini-2.5-flash
+  chunk_seconds: 600                # длинное аудио режется на куски по N секунд
+  enable_diarization: true          # размечать говорящих (Спикер N)
+  language: ru                      # подсказка языка для ASR
+  request_timeout: 300
+
+dify:
+  base_url: https://dify.t1v.scibox.tech/v1
+  app_api_key: ""                   # для /chat-messages (протокол / Q&A / обоснование)
+  dataset_api_key: ""               # для Dataset API (историческая память)
+  transcripts_dataset_id: ""        # датасет, куда складываются транскрипты
+  response_mode: streaming          # streaming | blocking
+  user: digital-office-backend
+  request_timeout: 180
+  # Команды-маршруты, совпадают с Question Classifier в workflow:
+  command_protocol: "Извлечение протокола"
+  command_qa: "Вопросы пользователя"
+  command_justification: "Справка-обоснование"
+  command_memo: "Создание справки(служебной записки)"
+
+max:
+  enabled: false                    # мост к microservice/ (MAX). По умолчанию выкл.
+  base_url: ""                      # URL microservice/, если включён мост
+  api_key: ""                       # ключ микросервиса MAX
+  request_timeout: 60
+
+media:
+  ffmpeg_path: ffmpeg               # путь к ffmpeg (для видео -> аудио)
