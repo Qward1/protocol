@@ -21,4 +21,14 @@ fi
 source .venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
+python - <<'PY'
+from app.services.media import ffmpeg_bin, ffmpeg_available
+import uvicorn
+
+binary = ffmpeg_bin()
+if not ffmpeg_available():
+    raise SystemExit(f"ffmpeg is not executable: {binary}")
+
+print(f"Backend preflight OK: uvicorn={uvicorn.__version__}, ffmpeg={binary}")
+PY
 python -m uvicorn app.main:app --host 0.0.0.0 --port 8080

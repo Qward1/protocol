@@ -34,7 +34,14 @@ def ffmpeg_bin() -> str:
 
 def ffmpeg_available() -> bool:
     try:
-        return Path(ffmpeg_bin()).is_file() or shutil.which(ffmpeg_bin()) is not None
+        binary = ffmpeg_bin()
+        subprocess.run(
+            [binary, "-version"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return True
     except Exception:
         return False
 
