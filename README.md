@@ -113,8 +113,9 @@ Vite проксирует `/api` на `http://localhost:8080`, поэтому ba
 bash scripts/start_8080.sh
 ```
 
-Скрипт собирает `frontend/dist`, после чего FastAPI раздаёт UI и `/api` из одного
-процесса на `0.0.0.0:8080`. Внешний путь задаётся в `backend/config.yaml`:
+Скрипт ставит frontend-зависимости, собирает `frontend/dist`, создаёт backend
+`.venv`, ставит `backend/requirements.txt`, после чего FastAPI раздаёт UI и `/api`
+из одного процесса на `0.0.0.0:8080`. Внешний путь задаётся в `backend/config.yaml`:
 
 ```yaml
 port: 8080

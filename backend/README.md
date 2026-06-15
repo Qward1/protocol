@@ -26,7 +26,8 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8080
 bash scripts/start_8080.sh   # Linux/macOS
 ```
 
-FastAPI отдаёт `../frontend/dist` и API из одного процесса. Для внешнего URL вида
+Скрипт создаёт `.venv`, ставит `requirements.txt`, затем FastAPI отдаёт
+`../frontend/dist` и API из одного процесса. Для внешнего URL вида
 `/jnserver/1109/application/` используйте:
 
 ```yaml
