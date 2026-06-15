@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import pytest
+import httpx
+
 from app.services.openrouter_asr import _parse_transcript, _ts_to_seconds
-from app.services.dify_client import _safe_json_loads
+from app.services.dify_client import _run_streaming, _safe_json_loads
 from app.services import exporter
 
 
@@ -44,6 +47,18 @@ def test_safe_json_loads_fenced():
 
 def test_safe_json_loads_embedded():
     assert _safe_json_loads('Вот результат: {"a": 1} конец') == {"a": 1}
+
+
+@pytest.mark.anyio
+async def test_run_streaming_reads_error_body_before_raise():
+    transport = httpx.MockTransport(
+        lambda request: httpx.Response(400, json={"error": "bad request"}, request=request)
+    )
+    async with httpx.AsyncClient(transport=transport, base_url="https://dify.example") as client:
+        with pytest.raises(httpx.HTTPStatusError) as exc_info:
+            await _run_streaming(client, {"query": "x"})
+
+    assert "bad request" in exc_info.value.response.text
 
 
 def test_export_all_formats(tmp_path, monkeypatch):

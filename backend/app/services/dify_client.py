@@ -40,6 +40,16 @@ def dataset_enabled() -> bool:
     return bool(settings.dify.dataset_api_key and settings.dify.transcripts_dataset_id)
 
 
+def _response_text(response: httpx.Response) -> str:
+    """Безопасно вернуть тело ответа для логов, включая streaming responses."""
+    try:
+        return response.text[:1000]
+    except httpx.ResponseNotRead:
+        return "<streaming response body was not read>"
+    except Exception:
+        return ""
+
+
 # --- сбор файловых URL (как в dify_memo_client) ---
 
 def _looks_like_file_url(value: str) -> bool:
@@ -140,7 +150,7 @@ async def run_command(
     except Exception as exc:  # каркас не должен падать из-за внешнего сервиса
         detail = ""
         if isinstance(exc, httpx.HTTPStatusError):
-            detail = f" response={exc.response.text[:1000]}"
+            detail = f" response={_response_text(exc.response)}"
         log.warning("Dify run_command(%s) failed: %s%s", command, exc, detail)
         return DifyResult(answer="", raw={"error": str(exc)})
 
@@ -156,6 +166,8 @@ async def _run_streaming(client: httpx.AsyncClient, payload: dict) -> DifyResult
     answer_parts: list[str] = []
     raw_events: list[dict] = []
     async with client.stream("POST", "/chat-messages", json=payload) as resp:
+        if resp.status_code >= 400:
+            await resp.aread()
         resp.raise_for_status()
         async for line in resp.aiter_lines():
             line = line.strip()
