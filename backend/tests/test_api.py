@@ -6,6 +6,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.db import SessionLocal
+from app.models import Protocol, Task
 
 
 @pytest.fixture(scope="module")
@@ -62,3 +64,20 @@ def test_transcription_create_and_delete(client):
 def test_export_missing_object_404(client):
     res = client.post("/api/export", json={"object_type": "protocol", "object_id": "x", "fmt": "md"})
     assert res.status_code == 404
+
+
+def test_send_task_to_max_disabled(client):
+    with SessionLocal() as db:
+        protocol = Protocol(title="Тест")
+        db.add(protocol)
+        db.commit()
+        db.refresh(protocol)
+        task = Task(protocol_id=protocol.id, assignment="Проверить отправку")
+        db.add(task)
+        db.commit()
+        db.refresh(task)
+        task_id = task.id
+
+    res = client.post(f"/api/tasks/{task_id}/send-max")
+    assert res.status_code == 400
+    assert "MAX отключён" in res.json()["detail"]

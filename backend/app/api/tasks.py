@@ -16,7 +16,7 @@ from app.schemas import (
     TaskExecutionSubmit,
     TaskUpdate,
 )
-from app.services import dify_client, max_bridge, memo
+from app.services import dify_client, max_bridge, max_handler, memo
 
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
 log = get_logger("tasks")
@@ -87,6 +87,23 @@ async def confirm_task(task_id: str, body: TaskConfirm, db: Session = Depends(ge
         await max_bridge.notify_memo_ready(task, memo_path)
 
     return task
+
+
+@router.post("/{task_id}/send-max")
+async def send_task_to_max(task_id: str, db: Session = Depends(get_db), chat_id: str | None = None):
+    """Отправить карточку поручения в группу MAX с кнопкой подтверждения исполнения."""
+    task = db.get(Task, task_id)
+    if not task:
+        raise HTTPException(404, "Task not found")
+    if not settings.max.enabled:
+        raise HTTPException(400, "MAX отключён: задайте max.enabled=true, bot_token и chat_id")
+
+    result = await max_handler.notify_task_assigned(db, task, chat_id=chat_id)
+    if result.get("error"):
+        raise HTTPException(502, f"MAX не принял сообщение: {result['error']}")
+    if result.get("disabled"):
+        raise HTTPException(400, "MAX отключён: не задан bot_token")
+    return {"ok": True, "result": result}
 
 
 @router.post("/{task_id}/justification", response_model=JustificationDTO)

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from datetime import timedelta
 
+import httpx
 from sqlalchemy.orm import Session
 
 from app.logging_config import get_logger
@@ -245,11 +246,20 @@ async def notify_task_assigned(db: Session, task: Task, chat_id: str | None = No
         f"Поручение: {task.assignment or '-'}\n"
         f"Срок: {task.deadline or '-'}"
     )
-    result = await MaxClient().send_message(
-        text, chat_id=target, attachments=confirmation_keyboard(task.id)
-    )
+    try:
+        result = await MaxClient().send_message(
+            text, chat_id=target, attachments=confirmation_keyboard(task.id)
+        )
+    except httpx.HTTPStatusError as exc:
+        body = exc.response.text if exc.response is not None else ""
+        log.warning("MAX не принял поручение %s: %s", task.id, body)
+        return {"error": body or str(exc)}
+    except Exception as exc:  # noqa: BLE001 - внешний MAX не должен ронять основной поток
+        log.warning("MAX отправка поручения %s не выполнена: %s", task.id, exc)
+        return {"error": str(exc)}
     if not result.get("error") and not result.get("disabled"):
         task.max_chat_id = target
+        task.notified_at = now_local_naive()
         db.commit()
     return result
 

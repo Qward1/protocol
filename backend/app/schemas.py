@@ -55,8 +55,10 @@ class TaskDTO(BaseModel):
     reason_comment: str = ""
     confidence: float = 0.0
     max_username: str = ""
+    max_chat_id: str = ""
     completion_text: str = ""
     closed_at: datetime | None = None
+    notified_at: datetime | None = None
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)

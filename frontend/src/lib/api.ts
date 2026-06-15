@@ -46,8 +46,10 @@ export interface Task {
   reason_comment: string;
   confidence: number;
   max_username: string;
+  max_chat_id: string;
   completion_text: string;
   closed_at?: string | null;
+  notified_at?: string | null;
   created_at: string;
 }
 
@@ -151,6 +153,8 @@ export const api = {
     http.post<Task>(`/api/tasks/${taskId}/execution`, { completion_text }).then((r) => r.data),
   confirmTask: (taskId: string, notify_max = false) =>
     http.post<Task>(`/api/tasks/${taskId}/confirm`, { notify_max }).then((r) => r.data),
+  sendTaskToMax: (taskId: string) =>
+    http.post<{ ok: boolean; result: unknown }>(`/api/tasks/${taskId}/send-max`).then((r) => r.data),
   buildJustification: (taskId: string) =>
     http.post<Justification>(`/api/tasks/${taskId}/justification`).then((r) => r.data),
 
