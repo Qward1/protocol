@@ -44,10 +44,33 @@ class DifySettings(BaseModel):
 
 
 class MaxBridgeSettings(BaseModel):
+    # MAX-интеграция теперь живёт в backend (бот, кнопки подтверждения, напоминания).
     enabled: bool = False
+    request_timeout: int = 60
+
+    # --- бот MAX ---
+    api_base_url: str = "https://platform-api.max.ru"
+    bot_token: str = ""                 # токен бота MAX
+    chat_id: str = ""                   # ID группы MAX по умолчанию (для группы — отрицательный)
+    webhook_secret: str = ""            # общий секрет: проверяется в query ?secret= вебхука
+
+    # --- напоминания о приближении срока ---
+    reminder_lead_minutes: int = 60     # за сколько минут до дедлайна слать напоминание
+    reminder_scan_seconds: int = 60     # период опроса задач планировщиком
+    default_deadline_time: str = "18:00"  # время дня, если в дедлайне только дата
+    timezone: str = "Europe/Moscow"
+
+    # --- legacy: исходящий мост к отдельному microservice (по умолчанию не нужен) ---
     base_url: str = ""
     api_key: str = ""
-    request_timeout: int = 60
+
+
+class GoogleSheetsSettings(BaseModel):
+    # Реестр поручений в Google Таблице через Apps Script Web App.
+    enabled: bool = False
+    webapp_url: str = ""                # URL развёрнутого Apps Script (.../exec)
+    script_token: str = ""             # общий токен, который проверяет скрипт
+    request_timeout: int = 30
 
 
 class MediaSettings(BaseModel):
@@ -91,15 +114,26 @@ class QASettings(BaseModel):
 class Settings(BaseModel):
     service_name: str = "digital-office-backend"
     host: str = "0.0.0.0"
-    port: int = 8000
+    port: int = 8080
     database_url: str = "sqlite:///./storage/app.db"
     storage_dir: str = "./storage"
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:5173"])
     log_level: str = "INFO"
+    # Раздача собранного фронтенда (SPA) из того же процесса. Пусто = автоопределение
+    # ../frontend/dist относительно backend/. Нужно для деплоя за одним портом.
+    frontend_dist: str = ""
+    # Префикс пути за reverse-proxy (если он НЕ срезается прокси). Обычно "" —
+    # jupyter-server-proxy срезает префикс, и backend работает в корне.
+    root_path: str = ""
+    # Публичный base path, по которому приложение открывается снаружи. Backend
+    # принимает этот префикс и снимает его перед маршрутизацией, чтобы работали
+    # оба режима reverse-proxy: со срезанием префикса и без него.
+    public_base_path: str = "/jnserver/1109/application/"
 
     openrouter: OpenRouterSettings = Field(default_factory=OpenRouterSettings)
     dify: DifySettings = Field(default_factory=DifySettings)
     max: MaxBridgeSettings = Field(default_factory=MaxBridgeSettings)
+    google_sheets: GoogleSheetsSettings = Field(default_factory=GoogleSheetsSettings)
     media: MediaSettings = Field(default_factory=MediaSettings)
     security: SecuritySettings = Field(default_factory=SecuritySettings)
     upload: UploadSettings = Field(default_factory=UploadSettings)

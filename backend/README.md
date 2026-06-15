@@ -10,10 +10,29 @@ cd backend
 python -m venv .venv && . .venv/Scripts/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 cp config.example.yaml config.yaml                 # заполнить ключи
-uvicorn app.main:app --reload --port 8000
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8080
 ```
 
-Открыть Swagger: http://localhost:8000/docs · здоровье: `/api/health`.
+Открыть Swagger: http://localhost:8080/docs · здоровье: `/api/health`.
+
+## Запуск на одном внешнем порту
+
+Если наружу открыт только порт 8080, соберите frontend и запускайте один FastAPI:
+
+```bash
+# из корня репозитория
+.\scripts\start_8080.ps1     # Windows PowerShell
+# или
+bash scripts/start_8080.sh   # Linux/macOS
+```
+
+FastAPI отдаёт `../frontend/dist` и API из одного процесса. Для внешнего URL вида
+`/jnserver/1109/application/` используйте:
+
+```yaml
+port: 8080
+public_base_path: /jnserver/1109/application/
+```
 
 ## Конфигурация
 

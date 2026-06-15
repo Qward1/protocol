@@ -16,7 +16,7 @@ from app.schemas import (
     TaskExecutionSubmit,
     TaskUpdate,
 )
-from app.services import dify_client, max_bridge
+from app.services import dify_client, max_bridge, memo, sheet_client
 
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
 log = get_logger("tasks")
@@ -40,7 +40,7 @@ def get_task(task_id: str, db: Session = Depends(get_db)):
 
 
 @router.patch("/{task_id}", response_model=TaskDTO)
-def update_task(task_id: str, body: TaskUpdate, db: Session = Depends(get_db)):
+async def update_task(task_id: str, body: TaskUpdate, db: Session = Depends(get_db)):
     """Ручная правка поручения (ответственный, срок, статус и т.д.)."""
     task = db.get(Task, task_id)
     if not task:
@@ -49,6 +49,7 @@ def update_task(task_id: str, body: TaskUpdate, db: Session = Depends(get_db)):
         setattr(task, field, value)
     db.commit()
     db.refresh(task)
+    await sheet_client.upsert_task(task)
     return task
 
 
@@ -62,6 +63,7 @@ async def submit_execution(task_id: str, body: TaskExecutionSubmit, db: Session 
     task.status = "Требует проверки"
     db.commit()
     db.refresh(task)
+    await sheet_client.upsert_task(task)
     return task
 
 
@@ -75,28 +77,17 @@ async def confirm_task(task_id: str, body: TaskConfirm, db: Session = Depends(ge
     task.closed_at = _now()
     task.status = "Выполнено"
 
-    # Справка о выполненной работе через Dify (если настроен).
-    query = (
-        f"{settings.dify.command_memo}\n\n"
-        f"Поручение: {task.assignment}\nОтветственный: {task.responsible}\n"
-        f"Что сделал сотрудник: {task.completion_text}"
-    )
-    result = await dify_client.run_command(
-        command=settings.dify.command_memo,
-        query=query,
-        inputs={
-            "assignment": task.assignment,
-            "responsible": task.responsible,
-            "completion_text": task.completion_text,
-            "context": task.completion_text,
-        },
-        name_hint=f"memo_{task.id}",
-    )
-    memo_path = result.files[0] if result.files else ""
+    # Справка о выполненной работе: Dify, при неудаче — локальный DOCX.
+    memo_path = await memo.build_memo(task)
+    if memo_path:
+        task.memo_path = memo_path
     db.commit()
     db.refresh(task)
 
-    # Опционально уведомляем MAX-микросервис.
+    # Реестр в Google Таблице: строка зеленеет.
+    await sheet_client.mark_completed(task)
+
+    # Опционально уведомляем legacy-мост MAX (microservice).
     if body.notify_max and max_bridge.enabled():
         await max_bridge.notify_memo_ready(task, memo_path)
 

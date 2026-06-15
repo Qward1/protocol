@@ -1,6 +1,8 @@
 import axios from "axios";
 
-export const http = axios.create({ baseURL: "/" });
+// baseURL = префикс развёртывания (Vite base). Так все вызовы "/api/..." уходят
+// через проксируемый путь (напр. /jnserver/1109/application/api/...).
+export const http = axios.create({ baseURL: import.meta.env.BASE_URL });
 
 // --- Типы (зеркало backend/app/schemas.py) ---
 
@@ -120,7 +122,8 @@ export const api = {
     http.get<TranscriptionListItem[]>("/api/transcriptions").then((r) => r.data),
   getTranscription: (id: string) =>
     http.get<Transcription>(`/api/transcriptions/${id}`).then((r) => r.data),
-  mediaUrl: (id: string) => `/api/transcriptions/${id}/media`,
+  // Прямой URL (для <audio src>) — с учётом префикса развёртывания.
+  mediaUrl: (id: string) => `${import.meta.env.BASE_URL}api/transcriptions/${id}/media`,
 
   generateProtocol: (transcription_id: string) =>
     http.post<Protocol>("/api/protocols", { transcription_id }).then((r) => r.data),

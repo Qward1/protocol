@@ -10,11 +10,14 @@ const queryClient = new QueryClient({
   defaultOptions: { queries: { refetchOnWindowFocus: false, retry: 1 } },
 });
 
+// basename для роутера = base из Vite (префикс прокси), без хвостового слэша.
+const basename = import.meta.env.BASE_URL.replace(/\/+$/, "");
+
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <ThemeProvider>
       <QueryClientProvider client={queryClient}>
-        <BrowserRouter>
+        <BrowserRouter basename={basename}>
           <App />
         </BrowserRouter>
       </QueryClientProvider>

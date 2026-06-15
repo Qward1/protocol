@@ -11,7 +11,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import uuid
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
@@ -94,9 +94,16 @@ class Task(Base):
     reason_comment: Mapped[str] = mapped_column(Text, default="")
     confidence: Mapped[float] = mapped_column(Float, default=0.0)
     max_username: Mapped[str] = mapped_column(String, default="")
+    # Получатель в MAX (заполняется при доставке в группу/чат)
+    max_user_id: Mapped[str] = mapped_column(String, default="")
+    max_chat_id: Mapped[str] = mapped_column(String, default="")
     # Контроль исполнения (ТЗ 3, 4)
     completion_text: Mapped[str] = mapped_column(Text, default="")  # что сделал сотрудник
     closed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    memo_path: Mapped[str] = mapped_column(String, default="")      # путь к справке (DOCX)
+    # Напоминания о приближении срока
+    reminder_sent: Mapped[bool] = mapped_column(Boolean, default=False)
+    notified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
     protocol: Mapped[Protocol] = relationship(back_populates="tasks")
@@ -119,6 +126,23 @@ class Justification(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
     task: Mapped[Task] = relationship(back_populates="justification")
+
+
+class ConfirmationSession(Base):
+    """Активный диалог подтверждения в MAX: бот ждёт от сотрудника текст о сделанном.
+
+    Создаётся по нажатию «Подтвердить исполнение», закрывается, когда сотрудник
+    прислал текст (или истёк ``expires_at``)."""
+
+    __tablename__ = "confirmation_sessions"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    max_user_id: Mapped[str] = mapped_column(String, index=True, default="")
+    chat_id: Mapped[str] = mapped_column(String, default="")
+    task_id: Mapped[str] = mapped_column(ForeignKey("tasks.id"))
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
 
 class ChatSession(Base):

@@ -3,10 +3,14 @@
 
 service_name: digital-office-backend
 host: 0.0.0.0
-port: 8000
+port: 8080                           # внешний прокси пропускает только этот порт
 database_url: sqlite:///./storage/app.db
 storage_dir: ./storage
 log_level: INFO
+# Раздача собранного фронтенда из того же процесса (один порт на API + UI).
+frontend_dist: ""                    # пусто = ../frontend/dist относительно backend/
+root_path: ""                        # префикс прокси, ЕСЛИ он не срезается (обычно "")
+public_base_path: /jnserver/1109/application/  # внешний путь приложения
 cors_origins:
   - http://localhost:5173
   - http://127.0.0.1:5173
@@ -68,10 +72,26 @@ dify:
   command_memo: "Создание справки(служебной записки)"
 
 max:
-  enabled: false                    # мост к microservice/ (MAX). По умолчанию выкл.
-  base_url: ""                      # URL microservice/, если включён мост
-  api_key: ""                       # ключ микросервиса MAX
+  enabled: false                    # включить MAX-бота (кнопки подтверждения + напоминания)
+  api_base_url: https://platform-api.max.ru
+  bot_token: ""                     # токен бота MAX
+  chat_id: ""                       # ID ГРУППЫ MAX (у групп он отрицательный, напр. -74989259735800)
+  webhook_secret: ""                # секрет вебхука: MAX должен звать /api/max/webhook?secret=...
+  # напоминания о приближении срока:
+  reminder_lead_minutes: 60         # за сколько минут до дедлайна напомнить
+  reminder_scan_seconds: 60         # период опроса задач планировщиком
+  default_deadline_time: "18:00"    # время, если в дедлайне указана только дата
+  timezone: Europe/Moscow
   request_timeout: 60
+  # legacy-мост к отдельному microservice (обычно не нужен, MAX-логика теперь в backend):
+  base_url: ""
+  api_key: ""
+
+google_sheets:
+  enabled: false                    # реестр поручений в Google Таблице (Apps Script Web App)
+  webapp_url: ""                    # URL Apps Script (.../exec)
+  script_token: ""                  # токен, который проверяет скрипт
+  request_timeout: 30
 
 media:
   ffmpeg_path: ffmpeg               # путь к ffmpeg (для видео -> аудио)

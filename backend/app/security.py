@@ -8,6 +8,10 @@ from app.config import settings
 
 _MUTATING = {"POST", "PUT", "PATCH", "DELETE"}
 
+# Пути, которые вызывает внешняя платформа MAX: проверяются собственным секретом
+# (max.webhook_secret), а не X-Api-Key.
+_EXEMPT_PATHS = {"/api/max/webhook"}
+
 
 async def auth_dependency(request: Request) -> None:
     """Глобальная зависимость: на изменяющих методах требует X-Api-Key.
@@ -17,6 +21,8 @@ async def auth_dependency(request: Request) -> None:
     if not settings.security.require_auth:
         return
     if request.method not in _MUTATING:
+        return
+    if request.url.path in _EXEMPT_PATHS:
         return
     provided = request.headers.get("X-Api-Key", "")
     if not settings.security.api_key or provided != settings.security.api_key:

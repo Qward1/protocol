@@ -84,10 +84,10 @@ python -m venv .venv
 
 pip install -r requirements.txt
 cp config.example.yaml config.yaml      # заполнить ключи (openrouter, dify)
-uvicorn app.main:app --reload --port 8000
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8080
 ```
 
-Проверка: Swagger — http://localhost:8000/docs, здоровье — http://localhost:8000/api/health.
+Проверка: Swagger — http://localhost:8080/docs, здоровье — http://localhost:8080/api/health.
 
 ### 2. Frontend
 
@@ -97,7 +97,29 @@ npm install
 npm run dev                              # http://localhost:5173
 ```
 
-Vite проксирует `/api` на `http://localhost:8000`, поэтому backend должен быть запущен.
+Vite проксирует `/api` на `http://localhost:8080`, поэтому backend должен быть запущен.
+
+### Запуск за прокси на единственном порту 8080
+
+Для окружения, где наружу открыт только порт 8080 и приложение доступно по
+`https://custom-servers.t1v.scibox.tech/jnserver/1109/application/`, запускайте
+единый backend+frontend:
+
+```bash
+# Windows PowerShell
+.\scripts\start_8080.ps1
+
+# Linux/macOS
+bash scripts/start_8080.sh
+```
+
+Скрипт собирает `frontend/dist`, после чего FastAPI раздаёт UI и `/api` из одного
+процесса на `0.0.0.0:8080`. Внешний путь задаётся в `backend/config.yaml`:
+
+```yaml
+port: 8080
+public_base_path: /jnserver/1109/application/
+```
 
 ### 3. Dify workflow
 
@@ -164,4 +186,4 @@ cd frontend && npm run build       # tsc + vite
   аудио-части модели (`openrouter.audio_part_type`); смотрите логи backend.
 - **Пустые ответы Q&A/протокола** — не задан `dify.app_api_key` или workflow не опубликован.
 - **Кириллица квадратами в PDF** — укажите TTF в `export.pdf_font_path`.
-- **CORS/`/api` не отвечает** — backend не запущен на `:8000` или изменён `cors_origins`.
+- **CORS/`/api` не отвечает** — backend не запущен на `:8080` или изменён `cors_origins`.

@@ -11,7 +11,7 @@ from app.config import settings
 from app.db import get_db
 from app.models import Protocol, Task, Transcription
 from app.schemas import GenerateProtocolRequest, ProtocolDTO, ProtocolListItem
-from app.services import dify_client, exec_control
+from app.services import dify_client, exec_control, max_handler, sheet_client
 
 router = APIRouter(prefix="/api/protocols", tags=["protocols"])
 
@@ -72,6 +72,13 @@ async def generate_protocol(req: GenerateProtocolRequest, db: Session = Depends(
     # Опционально дублируем поручения во внешний execution-control-service.
     if exec_control.enabled() and protocol.tasks:
         await exec_control.push_tasks(list(protocol.tasks))
+
+    # Реестр в Google Таблице и карточки с кнопкой подтверждения в группе MAX.
+    for task in protocol.tasks:
+        if sheet_client.enabled():
+            await sheet_client.upsert_task(task)
+        if settings.max.enabled:
+            await max_handler.notify_task_assigned(db, task)
 
     return protocol
 
