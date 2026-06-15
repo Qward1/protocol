@@ -129,10 +129,11 @@ async def run_command(
         "inputs": {"command": command, **(inputs or {})},
         "query": routed_query,
         "response_mode": cfg.response_mode,
-        "conversation_id": conversation_id,
         "user": cfg.user,
         "files": [],
     }
+    if conversation_id:
+        payload["conversation_id"] = conversation_id
     headers = {"Authorization": f"Bearer {cfg.app_api_key}", "Content-Type": "application/json"}
     timeout = httpx.Timeout(cfg.request_timeout, connect=20.0)
 

@@ -6,7 +6,8 @@ import pytest
 import httpx
 
 from app.services.openrouter_asr import _parse_transcript, _ts_to_seconds
-from app.services.dify_client import _run_streaming, _safe_json_loads
+from app.services import dify_client
+from app.services.dify_client import run_command, _run_streaming, _safe_json_loads
 from app.services import exporter
 
 
@@ -59,6 +60,34 @@ async def test_run_streaming_reads_error_body_before_raise():
             await _run_streaming(client, {"query": "x"})
 
     assert "bad request" in exc_info.value.response.text
+
+
+@pytest.mark.anyio
+async def test_run_command_omits_empty_conversation_id(monkeypatch):
+    captured: dict = {}
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    async def fake_blocking(client, payload):
+        captured.update(payload)
+        return dify_client.DifyResult(answer="{}")
+
+    monkeypatch.setattr(dify_client.settings.dify, "app_api_key", "test-key")
+    monkeypatch.setattr(dify_client.settings.dify, "response_mode", "blocking")
+    monkeypatch.setattr(dify_client.httpx, "AsyncClient", FakeClient)
+    monkeypatch.setattr(dify_client, "_run_blocking", fake_blocking)
+
+    await run_command("Извлечение протокола", "текст", conversation_id="")
+
+    assert "conversation_id" not in captured
 
 
 def test_export_all_formats(tmp_path, monkeypatch):
