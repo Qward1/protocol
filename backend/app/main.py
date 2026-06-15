@@ -10,7 +10,6 @@ from __future__ import annotations
 import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
-import shutil
 
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -22,6 +21,7 @@ from app.db import init_db
 from app.logging_config import get_logger, setup_logging
 from app.security import auth_dependency
 from app.services import reminders
+from app.services.media import ffmpeg_available
 from app.api import (
     export,
     library,
@@ -106,10 +106,7 @@ app.add_middleware(PublicBasePathMiddleware, base_path=settings.public_base_path
 
 
 def _ffmpeg_available() -> bool:
-    from pathlib import Path
-
-    ff = settings.media.ffmpeg_path
-    return shutil.which(ff) is not None or Path(ff).is_file()
+    return ffmpeg_available()
 
 
 @app.get("/api/health")

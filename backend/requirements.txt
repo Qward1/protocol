@@ -12,5 +12,7 @@ docxtpl>=0.16
 python-docx>=1.1
 # PDF-экспорт (любой из): reportlab — лёгкий, без системных зависимостей
 reportlab>=4.1
+# bundled ffmpeg binary fallback, when system ffmpeg is not installed
+imageio-ffmpeg>=0.5
 # тесты
 pytest>=8.2
