@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { FileText, Loader2 } from "lucide-react";
+import { FileText, Loader2, Text } from "lucide-react";
 import clsx from "clsx";
 import { api, type Segment } from "@/lib/api";
 import { Card, PageHeader, Empty, Spinner, Badge } from "@/components/ui";
@@ -47,12 +47,14 @@ export default function TranscriptPage() {
   if (!t) return <Spinner className="h-6 w-6" />;
 
   const processing = t.status === "pending" || t.status === "processing";
+  const isText = t.media_kind === "text";
+  const kindLabel = isText ? "Текст" : t.media_kind === "video" ? "Видео" : "Аудио";
 
   return (
     <div>
       <PageHeader
         title={t.filename}
-        subtitle={`${t.media_kind === "video" ? "Видео" : "Аудио"} · ${fmtTime(t.duration)} · ${t.segments.length} сегментов`}
+        subtitle={`${kindLabel} · ${isText ? "готовая расшифровка" : fmtTime(t.duration)} · ${t.segments.length} сегментов`}
         actions={
           <>
             <ExportMenu objectType="transcription" objectId={t.id} name={t.filename} />
@@ -83,10 +85,20 @@ export default function TranscriptPage() {
         </Card>
       )}
 
-      {/* Аудиоплеер закреплён сверху, транскрипт кликабелен */}
-      <Card className="sticky top-0 z-10 mb-4">
-        <audio ref={audioRef} src={api.mediaUrl(t.id)} controls className="w-full" />
-      </Card>
+      {!isText && (
+        <Card className="sticky top-0 z-10 mb-4">
+          <audio ref={audioRef} src={api.mediaUrl(t.id)} controls className="w-full" />
+        </Card>
+      )}
+
+      {isText && (
+        <Card className="mb-4 flex items-center gap-3 py-3">
+          <div className="grid h-9 w-9 place-items-center rounded-lg bg-accent/10 text-accent">
+            <Text className="h-4 w-4" />
+          </div>
+          <div className="text-sm text-muted">Запись создана из готового текста. Протокол можно сформировать сразу.</div>
+        </Card>
+      )}
 
       {t.segments.length === 0 ? (
         <Empty title="Сегментов пока нет" hint="Дождитесь окончания распознавания." />
@@ -97,10 +109,11 @@ export default function TranscriptPage() {
             return (
               <button
                 key={i}
-                onClick={() => seek(seg)}
+                onClick={() => !isText && seek(seg)}
                 className={clsx(
                   "flex w-full gap-3 rounded-lg px-3 py-2 text-left transition-colors",
-                  active ? "bg-accent/10" : "hover:bg-elevated",
+                  active && !isText ? "bg-accent/10" : !isText && "hover:bg-elevated",
+                  isText && "cursor-default",
                 )}
               >
                 <span className="mt-0.5 w-12 shrink-0 font-mono text-xs text-muted">

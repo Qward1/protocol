@@ -24,18 +24,18 @@ export default function Layout() {
   const { theme, toggle } = useTheme();
 
   return (
-    <div className="flex h-screen overflow-hidden">
-      <aside className="flex w-60 flex-col border-r border-border bg-surface">
-        <div className="flex items-center gap-2 px-5 py-5">
-          <div className="grid h-9 w-9 place-items-center rounded-lg bg-accent text-accent-fg">
+    <div className="flex min-h-screen flex-col lg:h-screen lg:flex-row lg:overflow-hidden">
+      <aside className="flex shrink-0 flex-col border-b border-border bg-surface/95 backdrop-blur lg:w-64 lg:border-b-0 lg:border-r">
+        <div className="flex items-center gap-3 px-4 py-4">
+          <div className="grid h-10 w-10 place-items-center rounded-lg bg-accent text-accent-fg shadow-sm">
             <Building2 className="h-5 w-5" />
           </div>
           <div className="leading-tight">
-            <div className="font-semibold">Цифровой Офис</div>
-            <div className="text-xs text-muted">встречи · протоколы</div>
+            <div className="text-base font-extrabold">Цифровой Офис</div>
+            <div className="text-xs font-medium text-muted">встречи / протоколы</div>
           </div>
         </div>
-        <nav className="flex-1 space-y-1 px-3">
+        <nav className="flex gap-1 overflow-x-auto px-3 pb-3 lg:flex-1 lg:flex-col lg:overflow-visible lg:pb-0">
           {NAV.map(({ to, label, icon: Icon, end }) => (
             <NavLink
               key={to}
@@ -43,8 +43,10 @@ export default function Layout() {
               end={end}
               className={({ isActive }) =>
                 clsx(
-                  "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
-                  isActive ? "bg-accent text-accent-fg" : "text-muted hover:bg-elevated hover:text-fg",
+                  "flex shrink-0 items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold transition-colors",
+                  isActive
+                    ? "bg-accent text-accent-fg shadow-sm"
+                    : "text-muted hover:bg-elevated hover:text-fg",
                 )
               }
             >
@@ -53,14 +55,14 @@ export default function Layout() {
             </NavLink>
           ))}
         </nav>
-        <button onClick={toggle} className="btn-ghost m-3 justify-start">
+        <button onClick={toggle} className="btn-ghost m-3 hidden justify-start lg:flex">
           {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
           {theme === "dark" ? "Светлая тема" : "Тёмная тема"}
         </button>
       </aside>
 
       <main className="flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-6xl px-6 py-8">
+        <div className="mx-auto max-w-7xl px-4 py-5 sm:px-6 lg:px-8">
           <Outlet />
         </div>
       </main>

@@ -124,6 +124,8 @@ export const api = {
       })
       .then((r) => r.data);
   },
+  createTextTranscription: (title: string, text: string) =>
+    http.post<Transcription>("/api/transcriptions/text", { title, text }).then((r) => r.data),
   listTranscriptions: () =>
     http.get<TranscriptionListItem[]>("/api/transcriptions").then((r) => r.data),
   getTranscription: (id: string) =>

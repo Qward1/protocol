@@ -1,27 +1,29 @@
+@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap&subset=cyrillic");
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
-  --bg: 247 248 250;
+  --bg: 242 245 247;
   --surface: 255 255 255;
-  --elevated: 255 255 255;
-  --border: 226 230 236;
-  --muted: 113 122 137;
-  --fg: 23 28 38;
-  --accent: 79 70 229; /* indigo-600 */
+  --elevated: 248 250 252;
+  --border: 214 221 230;
+  --muted: 91 103 118;
+  --fg: 17 24 39;
+  --accent: 14 116 144;
   --accent-fg: 255 255 255;
 }
 
 .dark {
-  --bg: 13 16 23;
-  --surface: 20 25 34;
-  --elevated: 27 33 45;
-  --border: 39 47 61;
-  --muted: 142 150 163;
-  --fg: 232 236 243;
-  --accent: 129 140 248; /* indigo-400 */
-  --accent-fg: 17 20 28;
+  --bg: 10 15 18;
+  --surface: 17 24 29;
+  --elevated: 24 35 41;
+  --border: 43 56 65;
+  --muted: 151 163 175;
+  --fg: 235 240 244;
+  --accent: 45 180 167;
+  --accent-fg: 5 18 22;
 }
 
 html,
@@ -32,31 +34,39 @@ body,
 
 body {
   @apply bg-bg text-fg antialiased;
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  background:
+    linear-gradient(180deg, rgb(var(--elevated) / 0.76) 0, rgb(var(--bg)) 340px),
+    rgb(var(--bg));
+  font-family: "Manrope", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  font-feature-settings: "cv02", "cv03", "cv04";
 }
 
 /* Утилитарные компоненты */
 @layer components {
   .card {
-    @apply rounded-xl2 border border-border bg-surface shadow-soft;
+    @apply rounded-lg border border-border/90 bg-surface shadow-soft;
   }
   .btn {
-    @apply inline-flex items-center justify-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium
+    @apply inline-flex min-h-9 items-center justify-center gap-2 rounded-lg px-3.5 py-2 text-sm font-semibold
       transition-colors disabled:cursor-not-allowed disabled:opacity-50;
   }
   .btn-primary {
-    @apply btn bg-accent text-accent-fg hover:opacity-90;
+    @apply btn bg-accent text-accent-fg shadow-sm hover:opacity-90;
   }
   .btn-ghost {
-    @apply btn border border-border bg-surface text-fg hover:bg-elevated;
+    @apply btn border border-border bg-surface text-fg hover:border-accent/50 hover:bg-elevated;
   }
   .input {
     @apply w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm outline-none
-      placeholder:text-muted focus:ring-2 focus:ring-accent/40;
+      placeholder:text-muted focus:border-accent/60 focus:ring-2 focus:ring-accent/25;
   }
   .chip {
-    @apply inline-flex items-center gap-1 rounded-full border border-border px-2.5 py-0.5 text-xs;
+    @apply inline-flex items-center gap-1 rounded-md border border-border px-2.5 py-0.5 text-xs font-medium;
   }
+}
+
+::selection {
+  background: rgb(var(--accent) / 0.2);
 }
 
 ::-webkit-scrollbar {

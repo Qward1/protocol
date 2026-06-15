@@ -15,9 +15,9 @@ export default {
         accent: "rgb(var(--accent) / <alpha-value>)",
         "accent-fg": "rgb(var(--accent-fg) / <alpha-value>)",
       },
-      borderRadius: { xl2: "1rem" },
+      borderRadius: { xl2: "0.5rem" },
       boxShadow: {
-        soft: "0 1px 2px rgba(0,0,0,0.04), 0 8px 24px rgba(0,0,0,0.06)",
+        soft: "0 1px 1px rgba(15,23,42,0.04), 0 10px 24px rgba(15,23,42,0.06)",
       },
     },
   },

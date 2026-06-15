@@ -41,6 +41,13 @@ class TranscriptionListItem(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class TextTranscriptionCreate(BaseModel):
+    """Создание транскрипции из уже готового текста встречи."""
+
+    title: str = "Текст встречи"
+    text: str
+
+
 # --- Protocol / Task ---
 
 class TaskDTO(BaseModel):

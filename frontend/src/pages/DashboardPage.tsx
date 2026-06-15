@@ -3,7 +3,6 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import {
   AlertTriangle,
-  CalendarDays,
   Check,
   CheckCircle2,
   Clock,
@@ -16,7 +15,6 @@ import {
   Search,
   Send,
   Upload,
-  Users,
   X,
 } from "lucide-react";
 import clsx from "clsx";
@@ -128,32 +126,12 @@ export default function DashboardPage() {
         }
       />
 
-      <section className="rounded-xl2 border border-border bg-surface p-5 shadow-soft">
-        <div className="grid gap-5 lg:grid-cols-[1.2fr_1fr] lg:items-center">
-          <div>
-            <div className="mb-3 inline-flex items-center gap-2 rounded-lg border border-border bg-elevated px-3 py-1.5 text-xs font-medium text-muted">
-              <ListChecks className="h-4 w-4 text-accent" />
-              Локальный контроль исполнения
-            </div>
-            <h2 className="text-xl font-semibold tracking-tight">Рабочий журнал поручений без внешних таблиц</h2>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">
-              Отправляйте поручения в группу MAX, фиксируйте исполнение и закрывайте задачи из одного экрана.
-            </p>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <MiniMetric icon={Users} label="Ответственные" value={uniqueCount(tasks ?? [], "responsible")} tone="sky" />
-            <MiniMetric icon={MessageSquare} label="В MAX" value={counts.sent} tone="emerald" />
-            <MiniMetric icon={CalendarDays} label="Со сроком" value={(tasks ?? []).filter((t) => t.deadline).length} tone="amber" />
-            <MiniMetric icon={CheckCircle2} label="Закрыто" value={counts.done} tone="rose" />
-          </div>
-        </div>
-      </section>
-
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
         <Stat icon={ListChecks} label="Всего" value={counts.total} tint="text-accent" accent="border-l-accent" />
         <Stat icon={Clock} label="Новые" value={counts.new} tint="text-sky-500" accent="border-l-sky-500" />
         <Stat icon={AlertTriangle} label="На проверке" value={counts.review} tint="text-amber-500" accent="border-l-amber-500" />
         <Stat icon={CheckCircle2} label="Выполнено" value={counts.done} tint="text-emerald-500" accent="border-l-emerald-500" />
+        <Stat icon={MessageSquare} label="В MAX" value={counts.sent} tint="text-rose-500" accent="border-l-rose-500" />
       </div>
 
       {notice && (
@@ -461,34 +439,6 @@ function Stat({
   );
 }
 
-function MiniMetric({
-  icon: Icon,
-  label,
-  value,
-  tone,
-}: {
-  icon: typeof ListChecks;
-  label: string;
-  value: number;
-  tone: "sky" | "emerald" | "amber" | "rose";
-}) {
-  const tones = {
-    sky: "bg-sky-500/10 text-sky-600 dark:text-sky-300",
-    emerald: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-300",
-    amber: "bg-amber-500/10 text-amber-600 dark:text-amber-300",
-    rose: "bg-rose-500/10 text-rose-600 dark:text-rose-300",
-  };
-  return (
-    <div className="rounded-lg border border-border bg-elevated p-3">
-      <div className={clsx("mb-2 grid h-8 w-8 place-items-center rounded-md", tones[tone])}>
-        <Icon className="h-4 w-4" />
-      </div>
-      <div className="text-lg font-semibold leading-none">{value}</div>
-      <div className="mt-1 text-xs text-muted">{label}</div>
-    </div>
-  );
-}
-
 function Meta({ label, value }: { label: string; value: string }) {
   return (
     <div className="grid grid-cols-[110px_1fr] gap-3 text-sm">
@@ -496,8 +446,4 @@ function Meta({ label, value }: { label: string; value: string }) {
       <div>{value}</div>
     </div>
   );
-}
-
-function uniqueCount(tasks: Task[], field: keyof Pick<Task, "responsible">) {
-  return new Set(tasks.map((task) => String(task[field] || "").trim()).filter(Boolean)).size;
 }
