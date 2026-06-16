@@ -53,6 +53,11 @@ class MaxBridgeSettings(BaseModel):
     bot_token: str = ""                 # токен бота MAX
     chat_id: str = ""                   # ID группы MAX по умолчанию (для группы — отрицательный)
     webhook_secret: str = ""            # общий секрет: проверяется в query ?secret= вебхука
+    # Публичный URL вебхука, который MAX вызывает при нажатии кнопок/сообщениях.
+    # Если задан и max.enabled=true — backend регистрирует подписку при старте.
+    # Должен включать ?secret=<webhook_secret>, напр.
+    #   https://host/jnserver/1109/application/api/max/webhook?secret=XXX
+    webhook_public_url: str = ""
 
     # --- напоминания о приближении срока ---
     reminder_lead_minutes: int = 60     # за сколько минут до дедлайна слать напоминание

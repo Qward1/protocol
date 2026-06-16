@@ -73,6 +73,11 @@ async def lifespan(_: FastAPI):
     reminder_task: asyncio.Task | None = None
     if settings.max.enabled:
         reminder_task = asyncio.create_task(reminders.reminder_loop())
+        # Регистрируем вебхук, чтобы нажатия inline-кнопок доезжали до backend.
+        if settings.max.webhook_public_url:
+            from app.services.max_client import MaxClient
+
+            await MaxClient().ensure_subscription(settings.max.webhook_public_url)
 
     try:
         yield
@@ -121,6 +126,7 @@ def health() -> dict:
         "asr_model": settings.openrouter.asr_model,
         "auth_required": settings.security.require_auth,
         "max_bot": settings.max.enabled,
+        "max_configured": bool(settings.max.enabled and settings.max.bot_token and settings.max.chat_id),
         "execution_control": settings.execution_control.enabled,
     }
 

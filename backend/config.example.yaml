@@ -77,6 +77,10 @@ max:
   bot_token: ""                     # токен бота MAX
   chat_id: ""                       # ID ГРУППЫ MAX (у групп он отрицательный, напр. -74989259735800)
   webhook_secret: ""                # секрет вебхука: MAX должен звать /api/max/webhook?secret=...
+  # Публичный URL вебхука. Если задан и enabled=true — backend сам регистрирует
+  # подписку при старте (без этого нажатия inline-кнопок не доходят до backend).
+  # Включите сюда ?secret=<webhook_secret>:
+  webhook_public_url: ""            # напр. https://host/jnserver/1109/application/api/max/webhook?secret=XXX
   # напоминания о приближении срока:
   reminder_lead_minutes: 60         # за сколько минут до дедлайна напомнить
   reminder_scan_seconds: 60         # период опроса задач планировщиком

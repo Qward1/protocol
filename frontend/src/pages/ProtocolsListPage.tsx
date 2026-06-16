@@ -1,8 +1,8 @@
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { FileText, ChevronRight } from "lucide-react";
+import { FileText, ChevronRight, ListChecks, CalendarDays, Upload } from "lucide-react";
 import { api } from "@/lib/api";
-import { Card, PageHeader, Empty, Spinner } from "@/components/ui";
+import { PageHeader, Empty, Spinner } from "@/components/ui";
 import { fmtDate } from "@/lib/utils";
 
 export default function ProtocolsListPage() {
@@ -10,29 +10,48 @@ export default function ProtocolsListPage() {
 
   return (
     <div>
-      <PageHeader title="Протоколы" subtitle="Сформированные протоколы совещаний и поручения." />
+      <PageHeader
+        icon={FileText}
+        title="Протоколы"
+        subtitle="Сформированные протоколы совещаний и связанные с ними поручения."
+      />
       {isLoading ? (
-        <Spinner className="h-6 w-6" />
+        <div className="flex justify-center py-16">
+          <Spinner className="h-6 w-6 text-accent" />
+        </div>
       ) : !data?.length ? (
-        <Empty title="Протоколов пока нет" hint="Откройте запись и нажмите «Сформировать протокол»." />
+        <Empty
+          icon={FileText}
+          title="Протоколов пока нет"
+          hint="Откройте запись на странице «Библиотека» и нажмите «Сформировать протокол»."
+          action={
+            <Link to="/upload" className="btn-primary">
+              <Upload className="h-4 w-4" /> Новая встреча
+            </Link>
+          }
+        />
       ) : (
-        <div className="space-y-2">
+        <div className="grid gap-3 sm:grid-cols-2">
           {data.map((p) => (
-            <Link key={p.id} to={`/protocols/${p.id}`}>
-              <Card className="flex items-center justify-between transition-colors hover:border-accent/50">
-                <div className="flex items-center gap-3">
-                  <div className="grid h-10 w-10 place-items-center rounded-lg bg-accent/10 text-accent">
-                    <FileText className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <div className="font-medium">{p.title || "Без названия"}</div>
-                    <div className="text-xs text-muted">
-                      {p.date || "—"} · создан {fmtDate(p.created_at)}
-                    </div>
-                  </div>
+            <Link key={p.id} to={`/protocols/${p.id}`} className="card-link group flex items-center gap-4 p-4">
+              <div className="icon-box h-12 w-12 shrink-0">
+                <FileText className="h-6 w-6" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="truncate font-semibold">{p.title || "Без названия"}</div>
+                <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
+                  <span className="inline-flex items-center gap-1">
+                    <ListChecks className="h-3.5 w-3.5" /> {p.tasks_count} поручений
+                  </span>
+                  {p.date && (
+                    <span className="inline-flex items-center gap-1">
+                      <CalendarDays className="h-3.5 w-3.5" /> {p.date}
+                    </span>
+                  )}
+                  <span>создан {fmtDate(p.created_at)}</span>
                 </div>
-                <ChevronRight className="h-5 w-5 text-muted" />
-              </Card>
+              </div>
+              <ChevronRight className="h-5 w-5 shrink-0 text-muted transition-transform group-hover:translate-x-0.5 group-hover:text-accent" />
             </Link>
           ))}
         </div>

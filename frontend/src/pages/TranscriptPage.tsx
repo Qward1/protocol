@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, Link } from "react-router-dom";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { FileText, Loader2, Text } from "lucide-react";
+import { FileText, Loader2, Text, AudioLines, Video, ChevronLeft } from "lucide-react";
 import clsx from "clsx";
 import { api, type Segment } from "@/lib/api";
 import { Card, PageHeader, Empty, Spinner, Badge } from "@/components/ui";
@@ -49,10 +49,15 @@ export default function TranscriptPage() {
   const processing = t.status === "pending" || t.status === "processing";
   const isText = t.media_kind === "text";
   const kindLabel = isText ? "Текст" : t.media_kind === "video" ? "Видео" : "Аудио";
+  const KindIcon = isText ? Text : t.media_kind === "video" ? Video : AudioLines;
 
   return (
     <div>
+      <Link to="/library" className="mb-3 inline-flex items-center gap-1 text-sm font-medium text-muted hover:text-fg">
+        <ChevronLeft className="h-4 w-4" /> Библиотека
+      </Link>
       <PageHeader
+        icon={KindIcon}
         title={t.filename}
         subtitle={`${kindLabel} · ${isText ? "готовая расшифровка" : fmtTime(t.duration)} · ${t.segments.length} сегментов`}
         actions={

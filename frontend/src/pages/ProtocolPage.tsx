@@ -1,13 +1,21 @@
 import { useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ScrollText, ChevronLeft, AudioLines } from "lucide-react";
+import {
+  ScrollText,
+  ChevronLeft,
+  AudioLines,
+  FileText,
+  CalendarClock,
+  ListChecks,
+  Quote,
+} from "lucide-react";
 import clsx from "clsx";
 import { api, type Task } from "@/lib/api";
-import { Card, PageHeader, Spinner, Badge } from "@/components/ui";
+import { Card, PageHeader, Spinner, Badge, SectionTitle, Avatar, Empty } from "@/components/ui";
 import ExportMenu from "@/components/ExportMenu";
 import JustificationModal from "@/components/JustificationModal";
-import { statusColor } from "@/lib/utils";
+import { statusColor, statusDot, deadlineUrgency, deadlineColor } from "@/lib/utils";
 
 export default function ProtocolPage() {
   const { id = "" } = useParams();
@@ -15,13 +23,24 @@ export default function ProtocolPage() {
 
   const { data: p } = useQuery({ queryKey: ["protocol", id], queryFn: () => api.getProtocol(id) });
 
-  if (!p) return <Spinner className="h-6 w-6" />;
+  if (!p) {
+    return (
+      <div className="flex justify-center py-16">
+        <Spinner className="h-6 w-6 text-accent" />
+      </div>
+    );
+  }
 
   return (
     <div>
+      <Link to="/protocols" className="mb-3 inline-flex items-center gap-1 text-sm font-medium text-muted hover:text-fg">
+        <ChevronLeft className="h-4 w-4" /> Все протоколы
+      </Link>
+
       <PageHeader
+        icon={FileText}
         title={p.title || "Протокол"}
-        subtitle={`${p.date || "дата не указана"}${p.number ? ` · № ${p.number}` : ""}`}
+        subtitle={`${p.date || "дата не указана"}${p.number ? ` · № ${p.number}` : ""} · ${p.tasks.length} поручений`}
         actions={
           <>
             {p.transcription_id && (
@@ -35,50 +54,75 @@ export default function ProtocolPage() {
         }
       />
 
-      <Link to="/protocols" className="mb-4 inline-flex items-center gap-1 text-sm text-muted hover:text-fg">
-        <ChevronLeft className="h-4 w-4" /> Все протоколы
-      </Link>
-
       {p.body && (
         <Card className="mb-6">
           <div className="whitespace-pre-wrap text-sm leading-relaxed">{p.body}</div>
         </Card>
       )}
 
-      <h2 className="mb-3 text-lg font-semibold">Поручения ({p.tasks.length})</h2>
-      <div className="space-y-3">
-        {p.tasks.map((task) => (
-          <Card key={task.id} className="space-y-3">
-            <div className="flex items-start justify-between gap-4">
-              <div className="flex-1">
-                <p className="font-medium">{task.assignment}</p>
-                <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted">
-                  <Badge>{task.responsible || "Ответственный не определён"}</Badge>
-                  {task.department && <Badge>{task.department}</Badge>}
-                  {task.deadline && <Badge>⏰ {task.deadline}</Badge>}
-                  <Badge className={clsx("border-transparent", statusColor(task.status))}>
-                    {task.status}
-                  </Badge>
-                  {task.confidence > 0 && (
-                    <Badge>уверенность {(task.confidence * 100).toFixed(0)}%</Badge>
-                  )}
+      <SectionTitle icon={ListChecks} count={p.tasks.length}>
+        Поручения
+      </SectionTitle>
+
+      {p.tasks.length === 0 ? (
+        <Empty icon={ListChecks} title="В этом протоколе нет поручений" />
+      ) : (
+        <div className="space-y-3">
+          {p.tasks.map((task) => {
+            const urgency = deadlineUrgency(task.deadline, task.status);
+            return (
+              <div key={task.id} className="card overflow-hidden p-0">
+                <div className="flex">
+                  <div className={clsx("w-1.5 shrink-0", statusDot(task.status))} />
+                  <div className="min-w-0 flex-1 p-4">
+                    <div className="flex items-start justify-between gap-4">
+                      <p className="flex-1 font-semibold leading-snug">{task.assignment}</p>
+                      <button className="btn-soft shrink-0" onClick={() => setJustifyTask(task)}>
+                        <ScrollText className="h-4 w-4" />
+                        Обоснование
+                      </button>
+                    </div>
+
+                    <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
+                      <span className="flex items-center gap-2">
+                        <Avatar name={task.responsible} className="h-7 w-7" />
+                        <span className="font-medium">{task.responsible || "Ответственный не определён"}</span>
+                      </span>
+                      {task.department && <span className="text-muted">{task.department}</span>}
+                      {task.deadline && (
+                        <span className={clsx("flex items-center gap-1.5 font-medium", deadlineColor(urgency))}>
+                          <CalendarClock className="h-4 w-4" /> {task.deadline}
+                        </span>
+                      )}
+                      <Badge className={clsx("border-transparent", statusColor(task.status))}>{task.status}</Badge>
+                      {task.confidence > 0 && (
+                        <span className="flex items-center gap-2 text-xs text-muted">
+                          <span className="h-1.5 w-16 overflow-hidden rounded-full bg-border">
+                            <span
+                              className="block h-full rounded-full bg-accent"
+                              style={{ width: `${Math.round(task.confidence * 100)}%` }}
+                            />
+                          </span>
+                          {(task.confidence * 100).toFixed(0)}%
+                        </span>
+                      )}
+                    </div>
+
+                    {task.source_fragment && (
+                      <div className="mt-3 rounded-lg border border-border bg-elevated/60 p-3 text-sm text-muted">
+                        <span className="section-label flex items-center gap-1">
+                          <Quote className="h-3.5 w-3.5" /> Фрагмент-источник
+                        </span>
+                        <p className="mt-1 italic">«{task.source_fragment}»</p>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
-              <button className="btn-ghost shrink-0" onClick={() => setJustifyTask(task)}>
-                <ScrollText className="h-4 w-4" />
-                Обоснование
-              </button>
-            </div>
-
-            {task.source_fragment && (
-              <div className="rounded-lg border border-border bg-elevated p-3 text-sm text-muted">
-                <span className="text-xs font-medium uppercase tracking-wide">Фрагмент-источник</span>
-                <p className="mt-1 italic">«{task.source_fragment}»</p>
-              </div>
-            )}
-          </Card>
-        ))}
-      </div>
+            );
+          })}
+        </div>
+      )}
 
       {justifyTask && <JustificationModal task={justifyTask} onClose={() => setJustifyTask(null)} />}
     </div>

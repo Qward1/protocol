@@ -22,6 +22,17 @@ router = APIRouter(prefix="/api/tasks", tags=["tasks"])
 log = get_logger("tasks")
 
 
+def _max_config_errors() -> list[str]:
+    errors: list[str] = []
+    if not settings.max.enabled:
+        errors.append("max.enabled=false")
+    if not settings.max.bot_token:
+        errors.append("max.bot_token не задан")
+    if not settings.max.chat_id:
+        errors.append("max.chat_id не задан")
+    return errors
+
+
 @router.get("", response_model=list[TaskDTO])
 def list_tasks(status: str | None = None, db: Session = Depends(get_db)):
     """Список поручений для дашборда контроля исполнения (фильтр по статусу)."""
@@ -95,14 +106,16 @@ async def send_task_to_max(task_id: str, db: Session = Depends(get_db), chat_id:
     task = db.get(Task, task_id)
     if not task:
         raise HTTPException(404, "Task not found")
-    if not settings.max.enabled:
-        raise HTTPException(400, "MAX отключён: задайте max.enabled=true, bot_token и chat_id")
+
+    config_errors = _max_config_errors()
+    if config_errors:
+        raise HTTPException(400, "MAX не настроен: " + "; ".join(config_errors))
 
     result = await max_handler.notify_task_assigned(db, task, chat_id=chat_id)
     if result.get("error"):
         raise HTTPException(502, f"MAX не принял сообщение: {result['error']}")
     if result.get("disabled"):
-        raise HTTPException(400, "MAX отключён: не задан bot_token")
+        raise HTTPException(400, "MAX не настроен: max.bot_token не задан")
     return {"ok": True, "result": result}
 
 

@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Send, Quote, SlidersHorizontal } from "lucide-react";
+import { Send, Quote, SlidersHorizontal, MessagesSquare } from "lucide-react";
 import { api, type Citation } from "@/lib/api";
 import { Card, PageHeader, Spinner, Badge } from "@/components/ui";
 import ExportMenu from "@/components/ExportMenu";
@@ -53,8 +53,9 @@ export default function ChatPage() {
   ].filter(Boolean);
 
   return (
-    <div className="flex h-[calc(100vh-7rem)] flex-col">
+    <div className="flex h-[calc(100vh-8rem)] flex-col lg:h-[calc(100vh-6rem)]">
       <PageHeader
+        icon={MessagesSquare}
         title="Вопросы по записям и протоколам"
         subtitle="Ответы только на основе выбранного контекста, с указанием источников."
         actions={
@@ -90,16 +91,28 @@ export default function ChatPage() {
       {/* Лента сообщений */}
       <Card className="flex-1 space-y-4 overflow-y-auto">
         {messages.length === 0 && (
-          <p className="py-10 text-center text-sm text-muted">
-            Задайте вопрос по выбранным записям, например: «Какие поручения дали Иванову и в какой срок?»
-          </p>
+          <div className="flex h-full flex-col items-center justify-center gap-3 py-10 text-center">
+            <div className="icon-box h-14 w-14">
+              <MessagesSquare className="h-7 w-7" />
+            </div>
+            <p className="max-w-md text-sm text-muted">
+              Задайте вопрос по выбранным записям, например:
+              <br />
+              <span className="text-fg">«Какие поручения дали Иванову и в какой срок?»</span>
+            </p>
+          </div>
         )}
         {messages.map((m, i) => (
           <div key={i} className={m.role === "user" ? "flex justify-end" : "flex justify-start"}>
             <div
-              className={`max-w-[80%] rounded-xl2 px-4 py-2.5 text-sm ${
-                m.role === "user" ? "bg-accent text-accent-fg" : "border border-border bg-elevated"
+              className={`max-w-[80%] animate-pop-in rounded-xl2 px-4 py-2.5 text-sm shadow-soft ${
+                m.role === "user" ? "text-accent-fg" : "border border-border bg-elevated"
               }`}
+              style={
+                m.role === "user"
+                  ? { backgroundImage: "linear-gradient(135deg, rgb(var(--accent)), rgb(var(--accent-2)))" }
+                  : undefined
+              }
             >
               <p className="whitespace-pre-wrap">{m.content}</p>
               {m.citations && m.citations.length > 0 && (

@@ -96,6 +96,46 @@ class MaxClient:
             response.raise_for_status()
             return response.json() if response.content else {"ok": True}
 
+    async def list_subscriptions(self) -> dict:
+        """Получить список зарегистрированных вебхуков бота (MAX Bot API)."""
+        if not self.enabled:
+            return {"disabled": True}
+        async with httpx.AsyncClient(timeout=settings.max.request_timeout, follow_redirects=True) as client:
+            response = await client.get(f"{self.base_url}/subscriptions", headers=self._headers())
+            response.raise_for_status()
+            return response.json() if response.content else {"subscriptions": []}
+
+    async def subscribe(self, url: str) -> dict:
+        """Зарегистрировать вебхук: MAX будет слать сюда сообщения и нажатия кнопок."""
+        if not self.enabled:
+            return {"disabled": True}
+        async with httpx.AsyncClient(timeout=settings.max.request_timeout, follow_redirects=True) as client:
+            response = await client.post(
+                f"{self.base_url}/subscriptions",
+                headers=self._headers(),
+                json={"url": url},
+            )
+            if response.status_code >= 400:
+                log.warning("MAX subscribe error %s: %s", response.status_code, response.text)
+            response.raise_for_status()
+            return response.json() if response.content else {"ok": True}
+
+    async def ensure_subscription(self, url: str) -> dict:
+        """Идемпотентно зарегистрировать вебхук: пропустить, если он уже есть."""
+        if not self.enabled or not url:
+            return {"skipped": True}
+        try:
+            existing = await self.list_subscriptions()
+            urls = {s.get("url") for s in existing.get("subscriptions", []) if isinstance(s, dict)}
+            if url in urls:
+                return {"ok": True, "already": True}
+            result = await self.subscribe(url)
+            log.info("MAX: вебхук зарегистрирован (%s)", url)
+            return result
+        except Exception as exc:  # noqa: BLE001 — старт не должен падать из-за MAX
+            log.warning("MAX: не удалось зарегистрировать вебхук: %s", exc)
+            return {"error": str(exc)}
+
     async def upload_file(self, file_path: str) -> dict:
         if not self.enabled:
             return {"disabled": True}

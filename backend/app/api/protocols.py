@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -83,7 +84,20 @@ async def generate_protocol(req: GenerateProtocolRequest, db: Session = Depends(
 
 @router.get("", response_model=list[ProtocolListItem])
 def list_protocols(db: Session = Depends(get_db)):
-    return db.query(Protocol).order_by(Protocol.created_at.desc()).all()
+    counts = dict(
+        db.query(Task.protocol_id, func.count(Task.id)).group_by(Task.protocol_id).all()
+    )
+    return [
+        ProtocolListItem(
+            id=p.id,
+            title=p.title,
+            date=p.date,
+            number=p.number,
+            tasks_count=counts.get(p.id, 0),
+            created_at=p.created_at,
+        )
+        for p in db.query(Protocol).order_by(Protocol.created_at.desc()).all()
+    ]
 
 
 @router.get("/{protocol_id}", response_model=ProtocolDTO)

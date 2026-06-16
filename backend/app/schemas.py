@@ -34,8 +34,10 @@ class TranscriptionDTO(BaseModel):
 class TranscriptionListItem(BaseModel):
     id: str
     filename: str
+    media_kind: str = "audio"
     status: str
     duration: float
+    segments_count: int = 0
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
@@ -110,6 +112,8 @@ class ProtocolListItem(BaseModel):
     id: str
     title: str
     date: str
+    number: str = ""
+    tasks_count: int = 0
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)

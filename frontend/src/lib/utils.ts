@@ -41,3 +41,56 @@ export function statusColor(status: string): string {
       return "bg-sky-500/15 text-sky-600 dark:text-sky-300";
   }
 }
+
+/** Цвет «точки»/левой полосы статуса (для карточек поручений). */
+export function statusDot(status: string): string {
+  switch (status) {
+    case "Выполнено":
+      return "bg-emerald-500";
+    case "Требует проверки":
+      return "bg-amber-500";
+    default:
+      return "bg-sky-500";
+  }
+}
+
+const DEADLINE_FORMATS: ((v: string) => Date | null)[] = [
+  (v) => {
+    const m = v.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2}))?/);
+    return m ? new Date(+m[1], +m[2] - 1, +m[3], +(m[4] ?? 23), +(m[5] ?? 59)) : null;
+  },
+  (v) => {
+    const m = v.match(/^(\d{1,2})[.\/](\d{1,2})[.\/](\d{4})(?:[ T](\d{2}):(\d{2}))?/);
+    return m ? new Date(+m[3], +m[2] - 1, +m[1], +(m[4] ?? 23), +(m[5] ?? 59)) : null;
+  },
+];
+
+/** Разбирает свободную строку срока и возвращает оттенок срочности. */
+export function deadlineUrgency(
+  deadline: string,
+  status: string,
+): "none" | "ok" | "soon" | "overdue" {
+  if (!deadline || status === "Выполнено") return "none";
+  let date: Date | null = null;
+  for (const parse of DEADLINE_FORMATS) {
+    date = parse(deadline.trim());
+    if (date && !Number.isNaN(date.getTime())) break;
+    date = null;
+  }
+  if (!date) return "none";
+  const days = (date.getTime() - Date.now()) / 86_400_000;
+  if (days < 0) return "overdue";
+  if (days <= 2) return "soon";
+  return "ok";
+}
+
+export function deadlineColor(urgency: ReturnType<typeof deadlineUrgency>): string {
+  switch (urgency) {
+    case "overdue":
+      return "text-rose-600 dark:text-rose-300";
+    case "soon":
+      return "text-amber-600 dark:text-amber-300";
+    default:
+      return "text-muted";
+  }
+}

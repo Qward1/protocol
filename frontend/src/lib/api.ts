@@ -4,6 +4,19 @@ import axios from "axios";
 // через проксируемый путь (напр. /jnserver/1109/application/api/...).
 export const http = axios.create({ baseURL: import.meta.env.BASE_URL });
 
+http.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (axios.isAxiosError(error)) {
+      const detail = error.response?.data?.detail;
+      if (typeof detail === "string" && detail) {
+        return Promise.reject(new Error(detail));
+      }
+    }
+    return Promise.reject(error);
+  },
+);
+
 // --- Типы (зеркало backend/app/schemas.py) ---
 
 export interface Segment {
@@ -29,8 +42,10 @@ export interface Transcription {
 export interface TranscriptionListItem {
   id: string;
   filename: string;
+  media_kind: string;
   status: string;
   duration: number;
+  segments_count: number;
   created_at: string;
 }
 
@@ -69,6 +84,8 @@ export interface ProtocolListItem {
   id: string;
   title: string;
   date: string;
+  number: string;
+  tasks_count: number;
   created_at: string;
 }
 
@@ -108,12 +125,26 @@ export interface Library {
   transcriptions: TranscriptionListItem[];
 }
 
+export interface Health {
+  status: string;
+  service: string;
+  ffmpeg: boolean;
+  dify_app: boolean;
+  dify_dataset: boolean;
+  openrouter: boolean;
+  asr_model: string;
+  auth_required: boolean;
+  max_bot: boolean;
+  max_configured: boolean;
+  execution_control: boolean;
+}
+
 export type ExportFmt = "docx" | "pdf" | "md" | "txt" | "json";
 
 // --- API ---
 
 export const api = {
-  health: () => http.get("/api/health").then((r) => r.data),
+  health: () => http.get<Health>("/api/health").then((r) => r.data),
 
   uploadTranscription: (file: File, onProgress?: (p: number) => void) => {
     const fd = new FormData();

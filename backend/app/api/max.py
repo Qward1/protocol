@@ -15,6 +15,7 @@ from app.db import get_db
 from app.logging_config import get_logger
 from app.models import Task
 from app.services import max_handler
+from app.services.max_client import MaxClient
 
 router = APIRouter(prefix="/api/max", tags=["max"])
 log = get_logger("max-api")
@@ -48,3 +49,43 @@ async def notify_task(task_id: str, db: Session = Depends(get_db), chat_id: str 
     if not settings.max.enabled:
         raise HTTPException(400, "MAX отключён (max.enabled=false)")
     return await max_handler.notify_task_assigned(db, task, chat_id=chat_id)
+
+
+@router.get("/status")
+async def max_status():
+    """Состояние интеграции MAX: настройки и зарегистрированные вебхуки.
+
+    Помогает проверить, «доезжают» ли нажатия inline-кнопок до backend.
+    """
+    info: dict = {
+        "enabled": settings.max.enabled,
+        "bot_token": bool(settings.max.bot_token),
+        "chat_id": bool(settings.max.chat_id),
+        "webhook_secret": bool(settings.max.webhook_secret),
+        "webhook_public_url": settings.max.webhook_public_url,
+        "subscriptions": [],
+    }
+    if settings.max.enabled and settings.max.bot_token:
+        try:
+            subs = await MaxClient().list_subscriptions()
+            info["subscriptions"] = subs.get("subscriptions", subs)
+        except Exception as exc:  # noqa: BLE001
+            info["subscriptions_error"] = str(exc)
+    return info
+
+
+@router.post("/subscribe")
+async def max_subscribe(url: str | None = None):
+    """Зарегистрировать (или переустановить) вебхук MAX вручную.
+
+    По умолчанию берёт ``max.webhook_public_url`` из конфигурации.
+    """
+    if not settings.max.enabled or not settings.max.bot_token:
+        raise HTTPException(400, "MAX не настроен: задайте max.enabled=true и bot_token")
+    target = url or settings.max.webhook_public_url
+    if not target:
+        raise HTTPException(400, "Не задан URL вебхука (max.webhook_public_url)")
+    result = await MaxClient().ensure_subscription(target)
+    if result.get("error"):
+        raise HTTPException(502, f"MAX не принял подписку: {result['error']}")
+    return {"ok": True, "url": target, "result": result}
