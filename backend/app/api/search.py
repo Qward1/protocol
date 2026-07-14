@@ -8,12 +8,13 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.models import Transcription
 from app.schemas import SearchHit, SearchRequest, SearchResponse
+from app.security import require_permission
 from app.services import dify_client
 
 router = APIRouter(prefix="/api/search", tags=["search"])
 
 
-@router.post("", response_model=SearchResponse)
+@router.post("", response_model=SearchResponse, dependencies=[Depends(require_permission("qa.use", "library.view"))])
 async def search(req: SearchRequest, db: Session = Depends(get_db)):
     records = await dify_client.retrieve(req.query, req.top_k)
     hits: list[SearchHit] = []

@@ -77,8 +77,27 @@ class MediaSettings(BaseModel):
 class SecuritySettings(BaseModel):
     # Если require_auth=true, изменяющие запросы (POST/PUT/PATCH/DELETE) требуют
     # заголовок X-Api-Key, совпадающий с api_key. GET всегда открыты.
+    # Работает, только когда auth.enabled=false (legacy-режим одного ключа).
     api_key: str = ""
     require_auth: bool = False
+
+
+class AuthSettings(BaseModel):
+    """Авторизация пользователей и ролевая модель (RBAC, ТЗ 3).
+
+    Пока enabled=false — вход не требуется (совместимость со старым поведением),
+    работает legacy-проверка security.require_auth. При enabled=true все запросы
+    (кроме логина/здоровья/вебхука MAX) требуют сессионный токен, а доступ к
+    ресурсам ограничивается ролью пользователя.
+    """
+
+    enabled: bool = False
+    session_ttl_hours: int = 12
+    # Начальный администратор: создаётся при первом старте, если пользователей нет.
+    seed_admin: bool = True
+    admin_username: str = "admin"
+    admin_password: str = "admin"
+    admin_full_name: str = "Администратор"
 
 
 class UploadSettings(BaseModel):
@@ -132,6 +151,7 @@ class Settings(BaseModel):
     max: MaxBridgeSettings = Field(default_factory=MaxBridgeSettings)
     media: MediaSettings = Field(default_factory=MediaSettings)
     security: SecuritySettings = Field(default_factory=SecuritySettings)
+    auth: AuthSettings = Field(default_factory=AuthSettings)
     upload: UploadSettings = Field(default_factory=UploadSettings)
     export: ExportSettings = Field(default_factory=ExportSettings)
     execution_control: ExecutionControlSettings = Field(default_factory=ExecutionControlSettings)

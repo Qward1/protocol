@@ -27,8 +27,20 @@ class TranscriptionDTO(BaseModel):
     full_text: str = ""
     created_at: datetime
     segments: list[SegmentDTO] = Field(default_factory=list)
+    # Сопоставление технических меток («Спикер 1») с ФИО/должностями (ТЗ 2).
+    speaker_map: dict[str, str] = Field(default_factory=dict)
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class SpeakerMapUpdate(BaseModel):
+    """Ручное сопоставление говорящих с людьми в рамках совещания.
+
+    ``mappings`` — словарь {исходная метка: ФИО/должность}. Пустое значение
+    убирает сопоставление и возвращает техническую метку.
+    """
+
+    mappings: dict[str, str] = Field(default_factory=dict)
 
 
 class TranscriptionListItem(BaseModel):
@@ -199,3 +211,50 @@ class ExportRequest(BaseModel):
     object_type: str  # protocol | transcription | chat | justification
     object_id: str
     fmt: str  # docx | pdf | md | txt | json
+
+
+# --- Auth / Users (ТЗ 3) ---
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+class UserDTO(BaseModel):
+    id: str
+    username: str
+    full_name: str = ""
+    role: str
+    is_active: bool = True
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class LoginResponse(BaseModel):
+    token: str
+    user: UserDTO
+    permissions: list[str] = Field(default_factory=list)
+
+
+class MeResponse(BaseModel):
+    """Текущий пользователь + флаг, включена ли авторизация в системе."""
+
+    auth_enabled: bool
+    authenticated: bool
+    user: UserDTO | None = None
+    permissions: list[str] = Field(default_factory=list)
+
+
+class UserCreate(BaseModel):
+    username: str
+    password: str
+    full_name: str = ""
+    role: str = "executor"
+
+
+class UserUpdate(BaseModel):
+    full_name: str | None = None
+    role: str | None = None
+    password: str | None = None
+    is_active: bool | None = None

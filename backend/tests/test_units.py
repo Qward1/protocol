@@ -38,6 +38,60 @@ def test_parse_transcript_fallback_no_timecodes():
     assert segs[0].start == 5.0 and segs[0].end == 15.0
 
 
+def test_parse_transcript_splits_merged_speakers_on_one_line():
+    # Несколько говорящих в одной строке -> отдельные сегменты (ТЗ 1).
+    text = "[00:11] Спикер 2: Да. Спикер 1: Вот по нему. Спикер 3: Добрый день."
+    segs = _parse_transcript(text, offset=0.0, chunk_end=60.0)
+    assert [s.speaker for s in segs] == ["Спикер 2", "Спикер 1", "Спикер 3"]
+    assert [s.text for s in segs] == ["Да.", "Вот по нему.", "Добрый день."]
+
+
+def test_parse_transcript_speaker_line_without_timecode_starts_new_segment():
+    # Реплика нового спикера без таймкода не должна склеиваться с предыдущей.
+    text = "[00:00] Спикер 1: привет\nСпикер 2: здравствуйте"
+    segs = _parse_transcript(text, offset=0.0, chunk_end=30.0)
+    assert len(segs) == 2
+    assert segs[1].speaker == "Спикер 2" and segs[1].text == "здравствуйте"
+
+
+def test_parse_transcript_continuation_line_glued():
+    # Строка-продолжение (без таймкода и без метки) приклеивается к предыдущей.
+    text = "[00:00] Спикер 1: начало\nпродолжение реплики"
+    segs = _parse_transcript(text, offset=0.0, chunk_end=30.0)
+    assert len(segs) == 1
+    assert segs[0].text == "начало продолжение реплики"
+
+
+def test_password_hash_roundtrip():
+    from app.services.auth import hash_password, verify_password
+
+    stored = hash_password("s3cret")
+    assert stored != "s3cret"
+    assert verify_password("s3cret", stored)
+    assert not verify_password("wrong", stored)
+    assert not verify_password("s3cret", "garbage")
+
+
+def test_role_permissions():
+    from app.services import auth
+
+    assert auth.has_permission("admin", "users.manage")
+    assert auth.has_permission("staff", "upload")
+    assert not auth.has_permission("head", "upload")          # глава — только просмотр
+    assert not auth.has_permission("executor", "library.view")  # исполнитель — только свои поручения
+    assert auth.has_permission("executor", "tasks.execute")
+
+
+def test_task_belongs_to_matches_by_name():
+    from types import SimpleNamespace
+    from app.services.auth import task_belongs_to
+
+    principal = SimpleNamespace(full_name="Иванов И.И.", username="ivanov")
+    assert task_belongs_to(SimpleNamespace(responsible="Иванов И.И.", max_username=""), principal)
+    assert not task_belongs_to(SimpleNamespace(responsible="Петров П.П.", max_username=""), principal)
+    assert task_belongs_to(SimpleNamespace(responsible="", max_username="ivanov"), principal)
+
+
 def test_safe_json_loads_plain():
     assert _safe_json_loads('{"a": 1}') == {"a": 1}
 

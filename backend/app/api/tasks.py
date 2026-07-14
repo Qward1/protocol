@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -16,10 +16,21 @@ from app.schemas import (
     TaskExecutionSubmit,
     TaskUpdate,
 )
-from app.services import dify_client, max_bridge, max_handler, memo
+from app.security import current_principal, require_permission
+from app.services import auth, dify_client, max_bridge, max_handler, memo
 
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
 log = get_logger("tasks")
+
+
+def _ensure_task_access(request: Request, task: Task) -> None:
+    """Исполнитель видит/меняет только свои поручения; остальные роли — все."""
+    principal = current_principal(request)
+    if principal.has("tasks.view_all", "tasks.manage"):
+        return
+    if principal.has("tasks.view_own", "tasks.execute") and auth.task_belongs_to(task, principal):
+        return
+    raise HTTPException(403, "Недостаточно прав")
 
 
 def _max_config_errors() -> list[str]:
@@ -33,24 +44,39 @@ def _max_config_errors() -> list[str]:
     return errors
 
 
-@router.get("", response_model=list[TaskDTO])
-def list_tasks(status: str | None = None, db: Session = Depends(get_db)):
-    """Список поручений для дашборда контроля исполнения (фильтр по статусу)."""
+@router.get(
+    "", response_model=list[TaskDTO],
+    dependencies=[Depends(require_permission("tasks.view_all", "tasks.view_own"))],
+)
+def list_tasks(request: Request, status: str | None = None, db: Session = Depends(get_db)):
+    """Список поручений для дашборда контроля исполнения (фильтр по статусу).
+
+    Исполнитель видит только свои поручения (по ФИО/логину), остальные роли — все.
+    """
     q = db.query(Task)
     if status:
         q = q.filter(Task.status == status)
-    return q.order_by(Task.created_at.desc()).all()
+    tasks = q.order_by(Task.created_at.desc()).all()
+
+    principal = current_principal(request)
+    if not principal.has("tasks.view_all"):
+        tasks = [t for t in tasks if auth.task_belongs_to(t, principal)]
+    return tasks
 
 
-@router.get("/{task_id}", response_model=TaskDTO)
-def get_task(task_id: str, db: Session = Depends(get_db)):
+@router.get(
+    "/{task_id}", response_model=TaskDTO,
+    dependencies=[Depends(require_permission("tasks.view_all", "tasks.view_own"))],
+)
+def get_task(task_id: str, request: Request, db: Session = Depends(get_db)):
     task = db.get(Task, task_id)
     if not task:
         raise HTTPException(404, "Task not found")
+    _ensure_task_access(request, task)
     return task
 
 
-@router.patch("/{task_id}", response_model=TaskDTO)
+@router.patch("/{task_id}", response_model=TaskDTO, dependencies=[Depends(require_permission("tasks.manage"))])
 async def update_task(task_id: str, body: TaskUpdate, db: Session = Depends(get_db)):
     """Ручная правка поручения (ответственный, срок, статус и т.д.)."""
     task = db.get(Task, task_id)
@@ -63,12 +89,16 @@ async def update_task(task_id: str, body: TaskUpdate, db: Session = Depends(get_
     return task
 
 
-@router.post("/{task_id}/execution", response_model=TaskDTO)
-async def submit_execution(task_id: str, body: TaskExecutionSubmit, db: Session = Depends(get_db)):
-    """Сотрудник сообщает, что сделано. Статус -> «Требует проверки»."""
+@router.post(
+    "/{task_id}/execution", response_model=TaskDTO,
+    dependencies=[Depends(require_permission("tasks.execute"))],
+)
+async def submit_execution(task_id: str, body: TaskExecutionSubmit, request: Request, db: Session = Depends(get_db)):
+    """Сотрудник/исполнитель сообщает, что сделано. Статус -> «Требует проверки»."""
     task = db.get(Task, task_id)
     if not task:
         raise HTTPException(404, "Task not found")
+    _ensure_task_access(request, task)  # исполнитель — только своё
     task.completion_text = body.completion_text
     task.status = "Требует проверки"
     db.commit()
@@ -76,7 +106,7 @@ async def submit_execution(task_id: str, body: TaskExecutionSubmit, db: Session 
     return task
 
 
-@router.post("/{task_id}/confirm", response_model=TaskDTO)
+@router.post("/{task_id}/confirm", response_model=TaskDTO, dependencies=[Depends(require_permission("tasks.manage"))])
 async def confirm_task(task_id: str, body: TaskConfirm, db: Session = Depends(get_db)):
     """Руководитель подтверждает выполнение. Задача закрывается, формируется справка."""
     task = db.get(Task, task_id)
@@ -100,7 +130,7 @@ async def confirm_task(task_id: str, body: TaskConfirm, db: Session = Depends(ge
     return task
 
 
-@router.post("/{task_id}/send-max")
+@router.post("/{task_id}/send-max", dependencies=[Depends(require_permission("tasks.manage"))])
 async def send_task_to_max(task_id: str, db: Session = Depends(get_db), chat_id: str | None = None):
     """Отправить карточку поручения в группу MAX с кнопкой подтверждения исполнения."""
     task = db.get(Task, task_id)
@@ -119,7 +149,10 @@ async def send_task_to_max(task_id: str, db: Session = Depends(get_db), chat_id:
     return {"ok": True, "result": result}
 
 
-@router.post("/{task_id}/justification", response_model=JustificationDTO)
+@router.post(
+    "/{task_id}/justification", response_model=JustificationDTO,
+    dependencies=[Depends(require_permission("protocols.view"))],
+)
 async def build_justification(task_id: str, db: Session = Depends(get_db)):
     """Сформировать справку-обоснование: на основании какого фрагмента и какой
     должностной обязанности поручение назначено на сотрудника."""

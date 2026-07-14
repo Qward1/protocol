@@ -16,8 +16,18 @@ cors_origins:
   - http://127.0.0.1:5173
 
 security:
-  api_key: ""                       # ключ для изменяющих запросов
+  api_key: ""                       # ключ для изменяющих запросов (legacy, работает при auth.enabled=false)
   require_auth: false               # true -> POST/PUT/PATCH/DELETE требуют X-Api-Key
+
+auth:
+  enabled: false                    # true -> вход по логину/паролю + ролевой доступ (RBAC)
+  session_ttl_hours: 12             # срок жизни сессионного токена
+  seed_admin: true                  # создать администратора при первом старте, если пользователей нет
+  admin_username: admin             # начальный логин администратора
+  admin_password: admin             # начальный пароль (СМЕНИТЕ после первого входа!)
+  admin_full_name: Администратор
+  # Роли: admin (полный доступ) · head (глава: просмотр) ·
+  #       staff (секретарь: ведение встреч/поручений) · executor (исполнитель: только свои поручения)
 
 upload:
   max_mb: 1024

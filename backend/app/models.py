@@ -11,7 +11,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import uuid
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
@@ -46,6 +46,18 @@ class Transcription(Base):
     protocols: Mapped[list["Protocol"]] = relationship(
         back_populates="transcription", cascade="all, delete-orphan"
     )
+    speaker_labels: Mapped[list["SpeakerLabel"]] = relationship(
+        back_populates="transcription", cascade="all, delete-orphan"
+    )
+
+    @property
+    def speaker_map(self) -> dict[str, str]:
+        """Сопоставление технических меток («Спикер 1») с ФИО/должностями."""
+        return {label.speaker: label.display_name for label in self.speaker_labels if label.display_name}
+
+    def display_speaker(self, speaker: str) -> str:
+        """Отображаемое имя говорящего с учётом ручного сопоставления."""
+        return self.speaker_map.get(speaker, speaker)
 
 
 class Segment(Base):
@@ -59,6 +71,25 @@ class Segment(Base):
     text: Mapped[str] = mapped_column(Text, default="")
 
     transcription: Mapped[Transcription] = relationship(back_populates="segments")
+
+
+class SpeakerLabel(Base):
+    """Ручное сопоставление говорящего с человеком в рамках одного совещания.
+
+    Хранит соответствие технической метки диаризации («Спикер 1») реальному
+    ФИО/должности/произвольному названию. Привязано к конкретной транскрипции —
+    при повторном открытии совещания сопоставления загружаются автоматически.
+    """
+
+    __tablename__ = "speaker_labels"
+    __table_args__ = (UniqueConstraint("transcription_id", "speaker", name="uq_speaker_per_transcription"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    transcription_id: Mapped[str] = mapped_column(ForeignKey("transcriptions.id"))
+    speaker: Mapped[str] = mapped_column(String, default="")        # исходная метка, напр. «Спикер 1»
+    display_name: Mapped[str] = mapped_column(String, default="")   # ФИО / должность / произвольное имя
+
+    transcription: Mapped[Transcription] = relationship(back_populates="speaker_labels")
 
 
 class Protocol(Base):
@@ -169,3 +200,43 @@ class ChatMessage(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
     session: Mapped[ChatSession] = relationship(back_populates="messages")
+
+
+class User(Base):
+    """Учётная запись пользователя (авторизация + ролевая модель, ТЗ 3).
+
+    Роли: ``admin`` (администратор), ``head`` (глава), ``staff`` (сотрудник
+    аппарата/секретарь), ``executor`` (исполнитель). Права по ролям — в
+    ``app/services/auth.py`` (ROLE_PERMISSIONS).
+    """
+
+    __tablename__ = "users"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    username: Mapped[str] = mapped_column(String, unique=True, index=True)
+    full_name: Mapped[str] = mapped_column(String, default="")
+    password_hash: Mapped[str] = mapped_column(String, default="")
+    role: Mapped[str] = mapped_column(String, default="executor")
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+
+    sessions: Mapped[list["AuthSession"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+
+
+class AuthSession(Base):
+    """Активная сессия пользователя: непрозрачный токен -> пользователь.
+
+    Токен передаётся с фронтенда в заголовке ``Authorization: Bearer <token>``.
+    Логаут удаляет сессию, истечение контролируется ``expires_at``.
+    """
+
+    __tablename__ = "auth_sessions"
+
+    token: Mapped[str] = mapped_column(String, primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"))
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+
+    user: Mapped[User] = relationship(back_populates="sessions")

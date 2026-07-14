@@ -1,18 +1,24 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
-import { useQuery, useMutation } from "@tanstack/react-query";
-import { FileText, Loader2, Text, AudioLines, Video, ChevronLeft } from "lucide-react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { FileText, Loader2, Text, AudioLines, Video, ChevronLeft, Pencil, X, Check, RotateCcw } from "lucide-react";
 import clsx from "clsx";
-import { api, type Segment } from "@/lib/api";
+import { api, type Segment, type Transcription } from "@/lib/api";
 import { Card, PageHeader, Empty, Spinner, Badge } from "@/components/ui";
 import ExportMenu from "@/components/ExportMenu";
 import { fmtTime, speakerColor } from "@/lib/utils";
+import { useAuth } from "@/lib/auth";
 
 export default function TranscriptPage() {
   const { id = "" } = useParams();
   const nav = useNavigate();
+  const qc = useQueryClient();
+  const { can } = useAuth();
   const audioRef = useRef<HTMLAudioElement>(null);
   const [current, setCurrent] = useState(0);
+  const [renaming, setRenaming] = useState<string | null>(null);
+
+  const canRename = can("speakers.manage");
 
   const { data: t } = useQuery({
     queryKey: ["transcription", id],
@@ -26,6 +32,14 @@ export default function TranscriptPage() {
   const genProtocol = useMutation({
     mutationFn: () => api.generateProtocol(id),
     onSuccess: (p) => nav(`/protocols/${p.id}`),
+  });
+
+  const saveSpeakers = useMutation({
+    mutationFn: (mappings: Record<string, string>) => api.updateSpeakers(id, mappings),
+    onSuccess: (updated) => {
+      qc.setQueryData(["transcription", id], updated);
+      setRenaming(null);
+    },
   });
 
   useEffect(() => {
@@ -50,6 +64,8 @@ export default function TranscriptPage() {
   const isText = t.media_kind === "text";
   const kindLabel = isText ? "Текст" : t.media_kind === "video" ? "Видео" : "Аудио";
   const KindIcon = isText ? Text : t.media_kind === "video" ? Video : AudioLines;
+  const speakerMap = t.speaker_map ?? {};
+  const displayName = (speaker: string) => speakerMap[speaker] || speaker;
 
   return (
     <div>
@@ -59,18 +75,20 @@ export default function TranscriptPage() {
       <PageHeader
         icon={KindIcon}
         title={t.filename}
-        subtitle={`${kindLabel} · ${isText ? "готовая расшифровка" : fmtTime(t.duration)} · ${t.segments.length} сегментов`}
+        subtitle={`${kindLabel} · ${isText ? "готовая расшифровка" : fmtTime(t.duration)} · ${t.segments.length} реплик`}
         actions={
           <>
             <ExportMenu objectType="transcription" objectId={t.id} name={t.filename} />
-            <button
-              className="btn-primary"
-              disabled={processing || genProtocol.isPending}
-              onClick={() => genProtocol.mutate()}
-            >
-              {genProtocol.isPending ? <Spinner /> : <FileText className="h-4 w-4" />}
-              Сформировать протокол
-            </button>
+            {can("protocols.manage") && (
+              <button
+                className="btn-primary"
+                disabled={processing || genProtocol.isPending}
+                onClick={() => genProtocol.mutate()}
+              >
+                {genProtocol.isPending ? <Spinner /> : <FileText className="h-4 w-4" />}
+                Сформировать протокол
+              </button>
+            )}
           </>
         }
       />
@@ -106,37 +124,141 @@ export default function TranscriptPage() {
       )}
 
       {t.segments.length === 0 ? (
-        <Empty title="Сегментов пока нет" hint="Дождитесь окончания распознавания." />
+        <Empty title="Реплик пока нет" hint="Дождитесь окончания распознавания." />
       ) : (
-        <Card className="space-y-1 p-3">
+        <div className="space-y-2">
           {t.segments.map((seg, i) => {
             const active = current >= seg.start && (seg.end ? current < seg.end : true);
+            const name = displayName(seg.speaker);
             return (
-              <button
+              <div
                 key={i}
                 onClick={() => !isText && seek(seg)}
                 className={clsx(
-                  "flex w-full gap-3 rounded-lg px-3 py-2 text-left transition-colors",
-                  active && !isText ? "bg-accent/10" : !isText && "hover:bg-elevated",
-                  isText && "cursor-default",
+                  "card p-3 transition-colors",
+                  active && !isText ? "border-accent/50 ring-1 ring-accent/30" : "",
+                  !isText && "cursor-pointer hover:border-accent/40",
                 )}
               >
-                <span className="mt-0.5 w-12 shrink-0 font-mono text-xs text-muted">
-                  {fmtTime(seg.start)}
-                </span>
-                <span className="flex-1">
-                  {seg.speaker && (
-                    <Badge className={clsx("mr-2 border-transparent", speakerColor(seg.speaker))}>
-                      {seg.speaker}
-                    </Badge>
-                  )}
-                  <span className="text-sm">{seg.text}</span>
-                </span>
-              </button>
+                <div className="mb-1.5 flex items-center gap-2">
+                  <span className="font-mono text-xs text-muted">{fmtTime(seg.start)}</span>
+                  {seg.speaker &&
+                    (canRename ? (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setRenaming(seg.speaker);
+                        }}
+                        className={clsx(
+                          "chip group border-transparent transition-colors hover:brightness-105",
+                          speakerColor(seg.speaker),
+                        )}
+                        title="Переименовать спикера"
+                      >
+                        {name}
+                        <Pencil className="h-3 w-3 opacity-50 group-hover:opacity-100" />
+                      </button>
+                    ) : (
+                      <Badge className={clsx("border-transparent", speakerColor(seg.speaker))}>{name}</Badge>
+                    ))}
+                </div>
+                <p className="text-sm leading-relaxed">{seg.text}</p>
+              </div>
             );
           })}
-        </Card>
+        </div>
       )}
+
+      {renaming !== null && (
+        <SpeakerRenameModal
+          speaker={renaming}
+          current={speakerMap[renaming] ?? ""}
+          transcription={t}
+          saving={saveSpeakers.isPending}
+          onSave={(name) => saveSpeakers.mutate({ [renaming]: name })}
+          onClose={() => setRenaming(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+function SpeakerRenameModal({
+  speaker,
+  current,
+  transcription,
+  saving,
+  onSave,
+  onClose,
+}: {
+  speaker: string;
+  current: string;
+  transcription: Transcription;
+  saving: boolean;
+  onSave: (name: string) => void;
+  onClose: () => void;
+}) {
+  const [value, setValue] = useState(current);
+  const count = transcription.segments.filter((s) => s.speaker === speaker).length;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+      <div className="card relative z-10 w-full max-w-md p-6">
+        <div className="mb-4 flex items-start justify-between">
+          <div className="flex items-center gap-2">
+            <Pencil className="h-5 w-5 text-accent" />
+            <h2 className="text-lg font-semibold">Переименовать спикера</h2>
+          </div>
+          <button onClick={onClose} className="rounded-lg p-1 hover:bg-elevated">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <p className="mb-4 text-sm text-muted">
+          Метка <span className="font-medium text-fg">{speaker}</span> ({count}{" "}
+          {count === 1 ? "реплика" : "реплик"}). Укажите ФИО, должность или произвольное имя — оно
+          заменит метку во всём совещании.
+        </p>
+
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            onSave(value.trim());
+          }}
+        >
+          <label className="block">
+            <span className="section-label mb-1.5 block">Имя / должность</span>
+            <input
+              className="input"
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              autoFocus
+              placeholder="напр. Иванов И.И. или Министр финансов"
+            />
+          </label>
+
+          <div className="mt-5 flex items-center justify-between gap-2">
+            <button
+              type="button"
+              className="btn-ghost"
+              disabled={saving || !current}
+              onClick={() => onSave("")}
+              title="Вернуть техническую метку"
+            >
+              <RotateCcw className="h-4 w-4" /> Сбросить
+            </button>
+            <div className="flex gap-2">
+              <button type="button" className="btn-ghost" onClick={onClose}>
+                Отмена
+              </button>
+              <button type="submit" className="btn-primary" disabled={saving}>
+                {saving ? <Spinner /> : <Check className="h-4 w-4" />} Сохранить
+              </button>
+            </div>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }

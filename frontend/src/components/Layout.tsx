@@ -11,28 +11,46 @@ import {
   Sun,
   Building2,
   Plus,
+  Users,
+  LogOut,
 } from "lucide-react";
 import { useTheme } from "@/lib/theme";
+import { useAuth, ROLE_LABELS } from "@/lib/auth";
 import { api } from "@/lib/api";
 
-const NAV = [
-  { to: "/", label: "Поручения", icon: ListChecks, end: true, group: "Работа" },
-  { to: "/upload", label: "Загрузка", icon: Upload, group: "Работа" },
-  { to: "/library", label: "Библиотека", icon: Library, group: "Память" },
-  { to: "/protocols", label: "Протоколы", icon: FileText, group: "Память" },
-  { to: "/chat", label: "Вопросы", icon: MessagesSquare, group: "Память" },
+interface NavItem {
+  to: string;
+  label: string;
+  icon: typeof ListChecks;
+  end?: boolean;
+  group: string;
+  perms: string[];
+}
+
+const NAV: NavItem[] = [
+  { to: "/", label: "Поручения", icon: ListChecks, end: true, group: "Работа", perms: ["dashboard.view", "tasks.view_own", "tasks.view_all"] },
+  { to: "/upload", label: "Загрузка", icon: Upload, group: "Работа", perms: ["upload"] },
+  { to: "/library", label: "Библиотека", icon: Library, group: "Память", perms: ["library.view"] },
+  { to: "/protocols", label: "Протоколы", icon: FileText, group: "Память", perms: ["protocols.view"] },
+  { to: "/chat", label: "Вопросы", icon: MessagesSquare, group: "Память", perms: ["qa.use"] },
+  { to: "/users", label: "Пользователи", icon: Users, group: "Администрирование", perms: ["users.manage"] },
 ];
 
-const GROUPS = ["Работа", "Память"] as const;
+const GROUPS = ["Работа", "Память", "Администрирование"] as const;
 
 export default function Layout() {
   const { theme, toggle } = useTheme();
+  const { can, user, authEnabled, logout } = useAuth();
   const { data: health } = useQuery({
     queryKey: ["health"],
     queryFn: api.health,
     refetchInterval: 60_000,
     staleTime: 30_000,
   });
+
+  // Управление пользователями имеет смысл только при включённой авторизации.
+  const items = NAV.filter((n) => can(...n.perms) && (n.to !== "/users" || authEnabled));
+  const groups = GROUPS.filter((g) => items.some((n) => n.group === g));
 
   return (
     <div className="flex min-h-screen flex-col lg:h-screen lg:flex-row lg:overflow-hidden">
@@ -55,15 +73,17 @@ export default function Layout() {
           </button>
         </div>
 
-        <Link to="/upload" className="btn-primary hidden lg:inline-flex">
-          <Plus className="h-4 w-4" /> Новая встреча
-        </Link>
+        {can("upload") && (
+          <Link to="/upload" className="btn-primary hidden lg:inline-flex">
+            <Plus className="h-4 w-4" /> Новая встреча
+          </Link>
+        )}
 
         <nav className="flex gap-1 overflow-x-auto lg:flex-1 lg:flex-col lg:gap-4 lg:overflow-visible">
-          {GROUPS.map((group) => (
+          {groups.map((group) => (
             <div key={group} className="flex gap-1 lg:flex-col lg:gap-1">
               <div className="section-label hidden px-3 pb-1 lg:block">{group}</div>
-              {NAV.filter((n) => n.group === group).map(({ to, label, icon: Icon, end }) => (
+              {items.filter((n) => n.group === group).map(({ to, label, icon: Icon, end }) => (
                 <NavLink
                   key={to}
                   to={to}
@@ -105,6 +125,20 @@ export default function Layout() {
             {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
             {theme === "dark" ? "Светлая тема" : "Тёмная тема"}
           </button>
+          {authEnabled && user && (
+            <div className="mt-1 flex items-center gap-2 rounded-lg border border-border/70 bg-elevated/40 p-2">
+              <div className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-accent/12 text-sm font-bold text-accent">
+                {(user.full_name || user.username).trim().charAt(0).toUpperCase() || "?"}
+              </div>
+              <div className="min-w-0 flex-1 leading-tight">
+                <div className="truncate text-sm font-semibold">{user.full_name || user.username}</div>
+                <div className="truncate text-xs text-muted">{ROLE_LABELS[user.role]}</div>
+              </div>
+              <button onClick={() => logout()} className="icon-btn h-8 w-8" title="Выйти">
+                <LogOut className="h-4 w-4" />
+              </button>
+            </div>
+          )}
         </div>
       </aside>
 

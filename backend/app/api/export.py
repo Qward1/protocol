@@ -11,12 +11,13 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.models import ChatSession, Justification, Protocol, Task, Transcription
 from app.schemas import ExportRequest
+from app.security import require_permission
 from app.services import exporter
 
 router = APIRouter(prefix="/api/export", tags=["export"])
 
 
-@router.post("")
+@router.post("", dependencies=[Depends(require_permission("export"))])
 def export_object(req: ExportRequest, db: Session = Depends(get_db)):
     if req.fmt not in exporter.SUPPORTED:
         raise HTTPException(400, f"Unsupported format: {req.fmt}")

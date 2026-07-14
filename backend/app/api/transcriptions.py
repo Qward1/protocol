@@ -12,8 +12,16 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.db import SessionLocal, get_db
 from app.logging_config import get_logger
-from app.models import Segment, Transcription
-from app.schemas import SegmentDTO, SegmentUpdate, TextTranscriptionCreate, TranscriptionDTO, TranscriptionListItem
+from app.models import Segment, SpeakerLabel, Transcription
+from app.schemas import (
+    SegmentDTO,
+    SegmentUpdate,
+    SpeakerMapUpdate,
+    TextTranscriptionCreate,
+    TranscriptionDTO,
+    TranscriptionListItem,
+)
+from app.security import require_permission
 from app.services import media, openrouter_asr, storage, dify_client
 
 router = APIRouter(prefix="/api/transcriptions", tags=["transcriptions"])
@@ -25,10 +33,13 @@ _TIMESTAMP_RE = re.compile(
 )
 
 
-def _build_full_text(segments) -> str:
+def _build_full_text(segments, speaker_map: dict[str, str] | None = None) -> str:
+    """Собрать сплошной текст встречи. speaker_map подставляет ФИО/должности
+    вместо технических меток (для экспорта и генерации протокола)."""
+    speaker_map = speaker_map or {}
     return "\n".join(
         f"[{int(s.start)//60:02d}:{int(s.start)%60:02d}] "
-        f"{(s.speaker + ': ') if s.speaker else ''}{s.text}"
+        f"{(speaker_map.get(s.speaker, s.speaker) + ': ') if s.speaker else ''}{s.text}"
         for s in segments
     )
 
@@ -154,7 +165,7 @@ async def _stream_to_disk(file: UploadFile, dst: Path) -> int:
     return written
 
 
-@router.post("", response_model=TranscriptionDTO)
+@router.post("", response_model=TranscriptionDTO, dependencies=[Depends(require_permission("upload"))])
 async def create_transcription(
     background: BackgroundTasks,
     file: UploadFile = File(...),
@@ -179,7 +190,7 @@ async def create_transcription(
     return t
 
 
-@router.post("/text", response_model=TranscriptionDTO)
+@router.post("/text", response_model=TranscriptionDTO, dependencies=[Depends(require_permission("upload"))])
 async def create_text_transcription(
     body: TextTranscriptionCreate,
     background: BackgroundTasks,
@@ -221,12 +232,18 @@ async def create_text_transcription(
     return t
 
 
-@router.get("", response_model=list[TranscriptionListItem])
+@router.get(
+    "", response_model=list[TranscriptionListItem],
+    dependencies=[Depends(require_permission("transcripts.view"))],
+)
 def list_transcriptions(db: Session = Depends(get_db)):
     return db.query(Transcription).order_by(Transcription.created_at.desc()).all()
 
 
-@router.get("/{transcription_id}", response_model=TranscriptionDTO)
+@router.get(
+    "/{transcription_id}", response_model=TranscriptionDTO,
+    dependencies=[Depends(require_permission("transcripts.view"))],
+)
 def get_transcription(transcription_id: str, db: Session = Depends(get_db)):
     t = db.get(Transcription, transcription_id)
     if not t:
@@ -234,7 +251,10 @@ def get_transcription(transcription_id: str, db: Session = Depends(get_db)):
     return t
 
 
-@router.get("/{transcription_id}/media")
+@router.get(
+    "/{transcription_id}/media",
+    dependencies=[Depends(require_permission("transcripts.view"))],
+)
 def stream_media(transcription_id: str, db: Session = Depends(get_db)):
     t = db.get(Transcription, transcription_id)
     if not t or not t.media_path or not Path(t.media_path).is_file():
@@ -242,7 +262,10 @@ def stream_media(transcription_id: str, db: Session = Depends(get_db)):
     return FileResponse(t.media_path, filename=t.filename)
 
 
-@router.post("/{transcription_id}/retry", response_model=TranscriptionDTO)
+@router.post(
+    "/{transcription_id}/retry", response_model=TranscriptionDTO,
+    dependencies=[Depends(require_permission("transcripts.manage"))],
+)
 def retry_transcription(
     transcription_id: str, background: BackgroundTasks, db: Session = Depends(get_db)
 ):
@@ -259,7 +282,10 @@ def retry_transcription(
     return t
 
 
-@router.put("/{transcription_id}/segments", response_model=TranscriptionDTO)
+@router.put(
+    "/{transcription_id}/segments", response_model=TranscriptionDTO,
+    dependencies=[Depends(require_permission("transcripts.manage"))],
+)
 def update_segments(transcription_id: str, body: SegmentUpdate, db: Session = Depends(get_db)):
     """Ручная правка сегментов (текст/спикеры) — заменяет весь список."""
     t = db.get(Transcription, transcription_id)
@@ -269,13 +295,54 @@ def update_segments(transcription_id: str, body: SegmentUpdate, db: Session = De
     for s in sorted(body.segments, key=lambda x: x.start):
         db.add(Segment(transcription_id=t.id, start=s.start, end=s.end, speaker=s.speaker, text=s.text))
     db.flush()
-    t.full_text = _build_full_text(sorted(t.segments, key=lambda x: x.start))
+    t.full_text = _build_full_text(sorted(t.segments, key=lambda x: x.start), t.speaker_map)
     db.commit()
     db.refresh(t)
     return t
 
 
-@router.delete("/{transcription_id}")
+@router.put(
+    "/{transcription_id}/speakers", response_model=TranscriptionDTO,
+    dependencies=[Depends(require_permission("speakers.manage"))],
+)
+def update_speakers(transcription_id: str, body: SpeakerMapUpdate, db: Session = Depends(get_db)):
+    """Ручное сопоставление говорящих с людьми (ТЗ 2).
+
+    Заменяет технические метки («Спикер 1») на ФИО/должность/произвольное имя в
+    рамках конкретного совещания. Пустое значение убирает сопоставление. После
+    сохранения пересобираем full_text, чтобы имена попали в экспорт и протокол.
+    """
+    t = db.get(Transcription, transcription_id)
+    if not t:
+        raise HTTPException(404, "Transcription not found")
+
+    existing = {label.speaker: label for label in t.speaker_labels}
+    for raw_speaker, raw_name in body.mappings.items():
+        speaker = (raw_speaker or "").strip()
+        name = (raw_name or "").strip()
+        if not speaker:
+            continue
+        if not name:
+            if speaker in existing:
+                db.delete(existing[speaker])
+            continue
+        if speaker in existing:
+            existing[speaker].display_name = name
+        else:
+            db.add(SpeakerLabel(transcription_id=t.id, speaker=speaker, display_name=name))
+
+    db.flush()
+    db.refresh(t)
+    t.full_text = _build_full_text(sorted(t.segments, key=lambda x: x.start), t.speaker_map)
+    db.commit()
+    db.refresh(t)
+    return t
+
+
+@router.delete(
+    "/{transcription_id}",
+    dependencies=[Depends(require_permission("transcripts.manage"))],
+)
 def delete_transcription(transcription_id: str, db: Session = Depends(get_db)):
     t = db.get(Transcription, transcription_id)
     if not t:

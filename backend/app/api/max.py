@@ -14,6 +14,7 @@ from app.config import settings
 from app.db import get_db
 from app.logging_config import get_logger
 from app.models import Task
+from app.security import require_permission
 from app.services import max_handler
 from app.services.max_client import MaxClient
 
@@ -40,7 +41,7 @@ async def max_webhook(request: Request, db: Session = Depends(get_db)):
         return {"error": str(exc)}
 
 
-@router.post("/tasks/{task_id}/notify")
+@router.post("/tasks/{task_id}/notify", dependencies=[Depends(require_permission("tasks.manage"))])
 async def notify_task(task_id: str, db: Session = Depends(get_db), chat_id: str | None = None):
     """Отправить карточку поручения с кнопкой подтверждения в группу MAX."""
     task = db.get(Task, task_id)
@@ -74,7 +75,7 @@ async def max_status():
     return info
 
 
-@router.post("/subscribe")
+@router.post("/subscribe", dependencies=[Depends(require_permission("tasks.manage"))])
 async def max_subscribe(url: str | None = None):
     """Зарегистрировать (или переустановить) вебхук MAX вручную.
 

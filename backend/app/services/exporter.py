@@ -29,9 +29,11 @@ _PDF_FONT_NAME = "DOFont"
 
 def transcription_to_md(t) -> str:
     lines = [f"# Транскрипция: {t.filename}", ""]
+    speaker_map = t.speaker_map
     for seg in t.segments:
         ts = _fmt_ts(seg.start)
-        speaker = f"**{seg.speaker}**: " if seg.speaker else ""
+        name = speaker_map.get(seg.speaker, seg.speaker) if seg.speaker else ""
+        speaker = f"**{name}**: " if name else ""
         lines.append(f"`[{ts}]` {speaker}{seg.text}")
     return "\n\n".join(lines)
 

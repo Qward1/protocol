@@ -23,6 +23,7 @@ from app.security import auth_dependency
 from app.services import reminders
 from app.services.media import ffmpeg_available
 from app.api import (
+    auth as auth_api,
     export,
     library,
     max as max_api,
@@ -67,7 +68,19 @@ class PublicBasePathMiddleware:
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     init_db()
-    log.info("%s запущен. Auth=%s", settings.service_name, settings.security.require_auth)
+
+    # Начальный администратор (только если включена авторизация пользователей).
+    if settings.auth.enabled:
+        from app.db import SessionLocal
+        from app.services.auth import seed_admin
+
+        with SessionLocal() as db:
+            seed_admin(db)
+
+    log.info(
+        "%s запущен. Auth=%s, RBAC=%s",
+        settings.service_name, settings.security.require_auth, settings.auth.enabled,
+    )
 
     # Планировщик напоминаний MAX (фоновая задача) — только если бот включён.
     reminder_task: asyncio.Task | None = None
@@ -128,10 +141,11 @@ def health() -> dict:
         "max_bot": settings.max.enabled,
         "max_configured": bool(settings.max.enabled and settings.max.bot_token and settings.max.chat_id),
         "execution_control": settings.execution_control.enabled,
+        "auth_enabled": settings.auth.enabled,
     }
 
 
-for module in (transcriptions, protocols, tasks, qa, search, library, export, max_api):
+for module in (auth_api, transcriptions, protocols, tasks, qa, search, library, export, max_api):
     app.include_router(module.router)
 
 

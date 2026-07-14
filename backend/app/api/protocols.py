@@ -12,6 +12,7 @@ from app.config import settings
 from app.db import get_db
 from app.models import Protocol, Task, Transcription
 from app.schemas import GenerateProtocolRequest, ProtocolDTO, ProtocolListItem
+from app.security import require_permission
 from app.services import dify_client, exec_control, max_handler
 
 router = APIRouter(prefix="/api/protocols", tags=["protocols"])
@@ -47,7 +48,7 @@ def _apply_dify_protocol(db: Session, protocol: Protocol, result_raw: dict, answ
         ))
 
 
-@router.post("", response_model=ProtocolDTO)
+@router.post("", response_model=ProtocolDTO, dependencies=[Depends(require_permission("protocols.manage"))])
 async def generate_protocol(req: GenerateProtocolRequest, db: Session = Depends(get_db)):
     t = db.get(Transcription, req.transcription_id)
     if not t:
@@ -82,7 +83,7 @@ async def generate_protocol(req: GenerateProtocolRequest, db: Session = Depends(
     return protocol
 
 
-@router.get("", response_model=list[ProtocolListItem])
+@router.get("", response_model=list[ProtocolListItem], dependencies=[Depends(require_permission("protocols.view"))])
 def list_protocols(db: Session = Depends(get_db)):
     counts = dict(
         db.query(Task.protocol_id, func.count(Task.id)).group_by(Task.protocol_id).all()
@@ -100,7 +101,7 @@ def list_protocols(db: Session = Depends(get_db)):
     ]
 
 
-@router.get("/{protocol_id}", response_model=ProtocolDTO)
+@router.get("/{protocol_id}", response_model=ProtocolDTO, dependencies=[Depends(require_permission("protocols.view"))])
 def get_protocol(protocol_id: str, db: Session = Depends(get_db)):
     p = db.get(Protocol, protocol_id)
     if not p:
@@ -108,7 +109,7 @@ def get_protocol(protocol_id: str, db: Session = Depends(get_db)):
     return p
 
 
-@router.delete("/{protocol_id}")
+@router.delete("/{protocol_id}", dependencies=[Depends(require_permission("protocols.manage"))])
 def delete_protocol(protocol_id: str, db: Session = Depends(get_db)):
     p = db.get(Protocol, protocol_id)
     if not p:

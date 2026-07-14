@@ -23,6 +23,7 @@ import clsx from "clsx";
 import { api, type Task } from "@/lib/api";
 import { PageHeader, Empty, Spinner, Badge, Avatar } from "@/components/ui";
 import { fmtDate, statusColor, statusDot, deadlineUrgency, deadlineColor } from "@/lib/utils";
+import { useAuth } from "@/lib/auth";
 
 const FILTERS = ["Все", "Новое", "Требует проверки", "Выполнено"] as const;
 const STATUS_OPTIONS = ["Новое", "Требует проверки", "Выполнено"] as const;
@@ -39,6 +40,10 @@ export default function DashboardPage() {
   const [completionText, setCompletionText] = useState<Record<string, string>>({});
   const [notice, setNotice] = useState<{ type: "ok" | "error"; text: string } | null>(null);
   const qc = useQueryClient();
+  const { can } = useAuth();
+  const canManage = can("tasks.manage");
+  const canExecute = can("tasks.execute");
+  const canUpload = can("upload");
 
   const { data: tasks, isLoading } = useQuery({ queryKey: ["tasks"], queryFn: () => api.listTasks() });
 
@@ -123,9 +128,11 @@ export default function DashboardPage() {
         title="Реестр поручений"
         subtitle="Ответственные, сроки, статусы, контроль исполнения и отправка в MAX — в одном месте."
         actions={
-          <Link to="/upload" className="btn-primary">
-            <Upload className="h-4 w-4" /> Новая запись
-          </Link>
+          canUpload ? (
+            <Link to="/upload" className="btn-primary">
+              <Upload className="h-4 w-4" /> Новая запись
+            </Link>
+          ) : undefined
         }
       />
 
@@ -140,6 +147,8 @@ export default function DashboardPage() {
           active={filter === "Выполнено"} onClick={() => setFilter("Выполнено")} />
         <Stat icon={MessageSquare} label="В MAX" value={counts.sent} tint="text-violet-500" bar="from-violet-400 to-violet-600" />
       </div>
+
+      {can("ratings.view") && !!tasks?.length && <Ratings tasks={tasks} />}
 
       {notice && (
         <div
@@ -271,7 +280,7 @@ export default function DashboardPage() {
                         </div>
 
                         <div className="mt-4 flex flex-wrap items-center gap-2">
-                          {task.status !== "Выполнено" && (
+                          {canManage && task.status !== "Выполнено" && (
                             <button
                               className="btn-primary"
                               disabled={confirm.isPending}
@@ -281,34 +290,42 @@ export default function DashboardPage() {
                               <Check className="h-4 w-4" /> Подтвердить
                             </button>
                           )}
-                          <button
-                            className="btn-soft"
-                            disabled={sendMax.isPending}
-                            onClick={() => sendMax.mutate(task.id)}
-                            title="Отправить карточку в группу MAX с кнопкой подтверждения"
-                          >
-                            <MessageSquare className="h-4 w-4" />
-                            {sentToMax ? "Отправить снова" : "В MAX"}
-                          </button>
-                          <button
-                            className="btn-ghost"
-                            onClick={() => setExpandedId(isExpanded ? null : task.id)}
-                          >
-                            <FileCheck2 className="h-4 w-4" /> Исполнение
-                            <ChevronDown
-                              className={clsx("h-4 w-4 transition-transform", isExpanded && "rotate-180")}
-                            />
-                          </button>
-                          <button className="btn-ghost" onClick={() => startEdit(task)}>
-                            <Edit3 className="h-4 w-4" /> Изменить
-                          </button>
-                          <Link
-                            className="icon-btn ml-auto"
-                            to={`/protocols/${task.protocol_id}`}
-                            title="Открыть протокол"
-                          >
-                            <ExternalLink className="h-4 w-4" />
-                          </Link>
+                          {canManage && (
+                            <button
+                              className="btn-soft"
+                              disabled={sendMax.isPending}
+                              onClick={() => sendMax.mutate(task.id)}
+                              title="Отправить карточку в группу MAX с кнопкой подтверждения"
+                            >
+                              <MessageSquare className="h-4 w-4" />
+                              {sentToMax ? "Отправить снова" : "В MAX"}
+                            </button>
+                          )}
+                          {canExecute && (
+                            <button
+                              className="btn-ghost"
+                              onClick={() => setExpandedId(isExpanded ? null : task.id)}
+                            >
+                              <FileCheck2 className="h-4 w-4" /> Исполнение
+                              <ChevronDown
+                                className={clsx("h-4 w-4 transition-transform", isExpanded && "rotate-180")}
+                              />
+                            </button>
+                          )}
+                          {canManage && (
+                            <button className="btn-ghost" onClick={() => startEdit(task)}>
+                              <Edit3 className="h-4 w-4" /> Изменить
+                            </button>
+                          )}
+                          {can("protocols.view") && (
+                            <Link
+                              className="icon-btn ml-auto"
+                              to={`/protocols/${task.protocol_id}`}
+                              title="Открыть протокол"
+                            >
+                              <ExternalLink className="h-4 w-4" />
+                            </Link>
+                          )}
                         </div>
                       </>
                     )}
@@ -360,7 +377,7 @@ export default function DashboardPage() {
                           >
                             <Send className="h-4 w-4" /> На проверку
                           </button>
-                          {task.status !== "Выполнено" && (
+                          {canManage && task.status !== "Выполнено" && (
                             <button
                               className="btn-primary"
                               disabled={confirm.isPending}
@@ -489,6 +506,56 @@ function Meta({ label, value }: { label: string; value: string }) {
     <div className="grid grid-cols-[130px_1fr] gap-3">
       <div className="section-label">{label}</div>
       <div className="text-sm">{value}</div>
+    </div>
+  );
+}
+
+/** Рейтинг исполнителей: доля выполненных поручений по ответственным (для главы). */
+function Ratings({ tasks }: { tasks: Task[] }) {
+  const rows = useMemo(() => {
+    const byPerson = new Map<string, { total: number; done: number }>();
+    for (const t of tasks) {
+      const name = (t.responsible || "").trim() || "Не назначен";
+      const rec = byPerson.get(name) ?? { total: 0, done: 0 };
+      rec.total += 1;
+      if (t.status === "Выполнено") rec.done += 1;
+      byPerson.set(name, rec);
+    }
+    return [...byPerson.entries()]
+      .map(([name, r]) => ({ name, ...r, rate: r.total ? r.done / r.total : 0 }))
+      .sort((a, b) => b.rate - a.rate || b.total - a.total)
+      .slice(0, 6);
+  }, [tasks]);
+
+  if (rows.length === 0) return null;
+
+  return (
+    <div className="card p-4">
+      <div className="mb-3 flex items-center gap-2">
+        <CheckCircle2 className="h-4 w-4 text-accent" />
+        <h2 className="text-sm font-bold uppercase tracking-wider text-muted">Рейтинг исполнителей</h2>
+      </div>
+      <div className="space-y-2.5">
+        {rows.map((r) => (
+          <div key={r.name} className="flex items-center gap-3">
+            <Avatar name={r.name === "Не назначен" ? "" : r.name} className="h-8 w-8" />
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center justify-between gap-2">
+                <span className="truncate text-sm font-medium">{r.name}</span>
+                <span className="shrink-0 text-xs font-semibold tabular-nums text-muted">
+                  {r.done}/{r.total} · {(r.rate * 100).toFixed(0)}%
+                </span>
+              </div>
+              <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-border">
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-accent to-accent-2"
+                  style={{ width: `${Math.round(r.rate * 100)}%` }}
+                />
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

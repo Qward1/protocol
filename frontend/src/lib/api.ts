@@ -4,6 +4,24 @@ import axios from "axios";
 // через проксируемый путь (напр. /jnserver/1109/application/api/...).
 export const http = axios.create({ baseURL: import.meta.env.BASE_URL });
 
+// --- Сессионный токен авторизации (ТЗ 3) ---
+const TOKEN_KEY = "do_auth_token";
+
+export function getToken(): string {
+  return localStorage.getItem(TOKEN_KEY) || "";
+}
+export function setToken(token: string | null) {
+  if (token) localStorage.setItem(TOKEN_KEY, token);
+  else localStorage.removeItem(TOKEN_KEY);
+}
+
+// Ко всем запросам подставляем Bearer-токен (если пользователь вошёл).
+http.interceptors.request.use((config) => {
+  const token = getToken();
+  if (token) config.headers.Authorization = `Bearer ${token}`;
+  return config;
+});
+
 http.interceptors.response.use(
   (response) => response,
   (error) => {
@@ -37,6 +55,34 @@ export interface Transcription {
   full_text: string;
   created_at: string;
   segments: Segment[];
+  // Сопоставление технических меток («Спикер 1») с ФИО/должностями (ТЗ 2).
+  speaker_map: Record<string, string>;
+}
+
+// --- Авторизация и роли (ТЗ 3) ---
+
+export type Role = "admin" | "head" | "staff" | "executor";
+
+export interface User {
+  id: string;
+  username: string;
+  full_name: string;
+  role: Role;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface MeResponse {
+  auth_enabled: boolean;
+  authenticated: boolean;
+  user: User | null;
+  permissions: string[];
+}
+
+export interface LoginResponse {
+  token: string;
+  user: User;
+  permissions: string[];
 }
 
 export interface TranscriptionListItem {
@@ -137,6 +183,7 @@ export interface Health {
   max_bot: boolean;
   max_configured: boolean;
   execution_control: boolean;
+  auth_enabled: boolean;
 }
 
 export type ExportFmt = "docx" | "pdf" | "md" | "txt" | "json";
@@ -161,8 +208,15 @@ export const api = {
     http.get<TranscriptionListItem[]>("/api/transcriptions").then((r) => r.data),
   getTranscription: (id: string) =>
     http.get<Transcription>(`/api/transcriptions/${id}`).then((r) => r.data),
-  // Прямой URL (для <audio src>) — с учётом префикса развёртывания.
-  mediaUrl: (id: string) => `${import.meta.env.BASE_URL}api/transcriptions/${id}/media`,
+  // Прямой URL (для <audio src>) — с учётом префикса развёртывания. Токен
+  // передаётся в query, т.к. тег <audio> не может отправить заголовок.
+  mediaUrl: (id: string) => {
+    const token = getToken();
+    const base = `${import.meta.env.BASE_URL}api/transcriptions/${id}/media`;
+    return token ? `${base}?token=${encodeURIComponent(token)}` : base;
+  },
+  updateSpeakers: (id: string, mappings: Record<string, string>) =>
+    http.put<Transcription>(`/api/transcriptions/${id}/speakers`, { mappings }).then((r) => r.data),
 
   generateProtocol: (transcription_id: string) =>
     http.post<Protocol>("/api/protocols", { transcription_id }).then((r) => r.data),
@@ -203,6 +257,18 @@ export const api = {
     http
       .post("/api/export", { object_type, object_id, fmt }, { responseType: "blob" })
       .then((r) => r.data as Blob),
+
+  // --- Авторизация / пользователи (ТЗ 3) ---
+  me: () => http.get<MeResponse>("/api/auth/me").then((r) => r.data),
+  login: (username: string, password: string) =>
+    http.post<LoginResponse>("/api/auth/login", { username, password }).then((r) => r.data),
+  logout: () => http.post("/api/auth/logout").then((r) => r.data),
+  listUsers: () => http.get<User[]>("/api/auth/users").then((r) => r.data),
+  createUser: (body: { username: string; password: string; full_name: string; role: Role }) =>
+    http.post<User>("/api/auth/users", body).then((r) => r.data),
+  updateUser: (id: string, patch: Partial<{ full_name: string; role: Role; password: string; is_active: boolean }>) =>
+    http.patch<User>(`/api/auth/users/${id}`, patch).then((r) => r.data),
+  deleteUser: (id: string) => http.delete(`/api/auth/users/${id}`).then((r) => r.data),
 };
 
 export function downloadBlob(blob: Blob, filename: string) {

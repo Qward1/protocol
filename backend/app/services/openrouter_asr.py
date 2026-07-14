@@ -25,11 +25,13 @@ from app.services import media
 
 log = get_logger("asr")
 
-# [мм:сс] Спикер N: текст   |   [чч:мм:сс] текст
-_LINE_RE = re.compile(
-    r"^\s*\[(?P<ts>\d{1,2}:\d{2}(?::\d{2})?)\]\s*"
-    r"(?:(?P<speaker>[^:]{1,40}):\s*)?(?P<text>.+)$"
-)
+# Тайм-код в начале строки: [мм:сс] или [чч:мм:сс].
+_TS_PREFIX_RE = re.compile(r"^\[(?P<ts>\d{1,2}:\d{2}(?::\d{2})?)\]\s*")
+# Метка говорящего: «Спикер 1», «Speaker 2», «СПИКЕР3» и т.п.
+_SPEAKER_TOKEN = r"(?:Спикер|Speaker|СПИКЕР)\s*\d+"
+# Маркер реплики внутри строки: «<метка>: ». Ищем все вхождения, чтобы одна
+# строка с несколькими говорящими разбивалась на отдельные реплики.
+_SPEAKER_FINDER_RE = re.compile(rf"(?P<label>{_SPEAKER_TOKEN})\s*:\s*", re.IGNORECASE)
 
 
 @dataclass
@@ -49,6 +51,38 @@ def _ts_to_seconds(ts: str) -> float:
     return h * 3600 + m * 60 + s
 
 
+def _normalize_speaker(label: str) -> str:
+    """Привести метку говорящего к единому виду «Спикер N»."""
+    m = re.search(r"\d+", label)
+    return f"Спикер {m.group()}" if m else label.strip()
+
+
+def _split_speaker_turns(content: str) -> list[tuple[str, str]]:
+    """Разбить блок текста на реплики по маркерам «Спикер N:».
+
+    Каждая смена говорящего внутри одной строки становится отдельной репликой,
+    чтобы разные спикеры никогда не склеивались в один сегмент. Возвращает список
+    ``(speaker, text)``; ``speaker`` пустой, если метки нет (обычный текст).
+    """
+    content = content.strip()
+    if not content:
+        return []
+    matches = list(_SPEAKER_FINDER_RE.finditer(content))
+    if not matches:
+        return [("", content)]
+
+    turns: list[tuple[str, str]] = []
+    lead = content[: matches[0].start()].strip()
+    if lead:
+        turns.append(("", lead))
+    for i, m in enumerate(matches):
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(content)
+        text = content[m.end() : end].strip()
+        if text:
+            turns.append((_normalize_speaker(m.group("label")), text))
+    return turns
+
+
 def _audio_format(path: Path) -> str:
     return path.suffix.lower().lstrip(".") or "wav"
 
@@ -64,25 +98,33 @@ def _parse_transcript(text: str, offset: float, chunk_end: float) -> list[AsrSeg
     корректно проставить end последнего сегмента.
     """
     segments: list[AsrSegment] = []
-    for line in text.splitlines():
-        line = line.strip()
+    for raw in text.splitlines():
+        line = raw.strip()
         if not line:
             continue
-        m = _LINE_RE.match(line)
-        if not m:
-            # строка без тайм-кода — приклеиваем к предыдущему сегменту
-            if segments:
-                segments[-1].text += " " + line
+        m = _TS_PREFIX_RE.match(line)
+        ts: float | None = None
+        if m:
+            ts = _ts_to_seconds(m.group("ts")) + offset
+            line = line[m.end():].strip()
+
+        turns = _split_speaker_turns(line)
+        if not turns:
             continue
-        start = _ts_to_seconds(m.group("ts")) + offset
-        segments.append(
-            AsrSegment(
-                start=start,
-                end=start,  # уточняется ниже по следующему сегменту
-                speaker=(m.group("speaker") or "").strip(),
-                text=m.group("text").strip(),
+
+        has_speaker = any(speaker for speaker, _ in turns)
+        # Строка-продолжение (без тайм-кода и без метки говорящего) —
+        # приклеиваем к предыдущему сегменту. Смена говорящего или новый
+        # тайм-код всегда начинают отдельный сегмент.
+        if ts is None and not has_speaker and segments:
+            segments[-1].text += " " + turns[0][1]
+            continue
+
+        for speaker, seg_text in turns:
+            start = ts if ts is not None else (segments[-1].start if segments else offset)
+            segments.append(
+                AsrSegment(start=start, end=start, speaker=speaker, text=seg_text)
             )
-        )
 
     # Фоллбэк: модель не вернула тайм-коды — один сегмент на весь чанк.
     if not segments and text.strip():

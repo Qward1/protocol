@@ -18,11 +18,16 @@ import clsx from "clsx";
 import { api, type SearchHit, type TranscriptionListItem, type ProtocolListItem } from "@/lib/api";
 import { Card, PageHeader, Empty, Spinner, Badge, SectionTitle } from "@/components/ui";
 import { useSelection } from "@/store/selection";
+import { useAuth } from "@/lib/auth";
 import { fmtDate, fmtTime } from "@/lib/utils";
 
 export default function LibraryPage() {
   const nav = useNavigate();
   const qc = useQueryClient();
+  const { can } = useAuth();
+  const canDelTr = can("transcripts.manage");
+  const canDelPr = can("protocols.manage");
+  const canQa = can("qa.use");
   const { data, isLoading } = useQuery({ queryKey: ["library"], queryFn: api.library });
   const sel = useSelection();
   const [q, setQ] = useState("");
@@ -50,14 +55,16 @@ export default function LibraryPage() {
         title="Библиотека"
         subtitle="Историческая память: записи и протоколы. Отметьте нужные — задайте вопросы или ищите по смыслу."
         actions={
-          <button
-            className="btn-primary"
-            disabled={selectedCount === 0}
-            onClick={() => nav("/chat")}
-          >
-            <MessagesSquare className="h-4 w-4" />
-            Вопросы по выбранному ({selectedCount})
-          </button>
+          canQa ? (
+            <button
+              className="btn-primary"
+              disabled={selectedCount === 0}
+              onClick={() => nav("/chat")}
+            >
+              <MessagesSquare className="h-4 w-4" />
+              Вопросы по выбранному ({selectedCount})
+            </button>
+          ) : undefined
         }
       />
 
@@ -146,6 +153,7 @@ export default function LibraryPage() {
                     key={t.id}
                     t={t}
                     picked={sel.transcriptionIds.includes(t.id)}
+                    canDelete={canDelTr}
                     onToggle={() => sel.toggleTranscription(t.id)}
                     onDelete={() => delTr.mutate(t.id)}
                   />
@@ -183,6 +191,7 @@ export default function LibraryPage() {
                     key={p.id}
                     p={p}
                     picked={sel.protocolIds.includes(p.id)}
+                    canDelete={canDelPr}
                     onToggle={() => sel.toggleProtocol(p.id)}
                     onDelete={() => delPr.mutate(p.id)}
                   />
@@ -205,11 +214,13 @@ function kindIcon(kind: string) {
 function TranscriptionRow({
   t,
   picked,
+  canDelete,
   onToggle,
   onDelete,
 }: {
   t: TranscriptionListItem;
   picked: boolean;
+  canDelete: boolean;
   onToggle: () => void;
   onDelete: () => void;
 }) {
@@ -233,7 +244,7 @@ function TranscriptionRow({
         </div>
       </Link>
       <StatusChip status={t.status} />
-      <DeleteBtn onClick={onDelete} />
+      {canDelete && <DeleteBtn onClick={onDelete} />}
     </div>
   );
 }
@@ -241,11 +252,13 @@ function TranscriptionRow({
 function ProtocolRow({
   p,
   picked,
+  canDelete,
   onToggle,
   onDelete,
 }: {
   p: ProtocolListItem;
   picked: boolean;
+  canDelete: boolean;
   onToggle: () => void;
   onDelete: () => void;
 }) {
@@ -273,7 +286,7 @@ function ProtocolRow({
         </div>
       </Link>
       <ChevronRight className="h-4 w-4 shrink-0 text-muted" />
-      <DeleteBtn onClick={onDelete} />
+      {canDelete && <DeleteBtn onClick={onDelete} />}
     </div>
   );
 }

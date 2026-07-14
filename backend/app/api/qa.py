@@ -12,6 +12,7 @@ from app.config import settings
 from app.db import get_db
 from app.models import ChatMessage, ChatSession, Protocol, Transcription
 from app.schemas import Citation, QARequest, QAResponse
+from app.security import require_permission
 from app.services import dify_client
 
 router = APIRouter(prefix="/api/qa", tags=["qa"])
@@ -70,7 +71,7 @@ def _build_context(db: Session, req: QARequest) -> tuple[str, list[Citation]]:
     return context, citations
 
 
-@router.post("", response_model=QAResponse)
+@router.post("", response_model=QAResponse, dependencies=[Depends(require_permission("qa.use"))])
 async def ask(req: QARequest, db: Session = Depends(get_db)):
     # сессия чата
     session = db.get(ChatSession, req.session_id) if req.session_id else None

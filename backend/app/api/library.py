@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.models import Protocol, Segment, Task, Transcription
 from app.schemas import LibraryResponse, ProtocolListItem, TranscriptionListItem
+from app.security import require_permission
 
 router = APIRouter(prefix="/api/library", tags=["library"])
 
@@ -27,7 +28,7 @@ def _segment_counts(db: Session) -> dict[str, int]:
     return {tid: cnt for tid, cnt in rows}
 
 
-@router.get("", response_model=LibraryResponse)
+@router.get("", response_model=LibraryResponse, dependencies=[Depends(require_permission("library.view"))])
 def get_library(db: Session = Depends(get_db)):
     task_counts = _task_counts(db)
     seg_counts = _segment_counts(db)
