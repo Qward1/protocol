@@ -1,4 +1,4 @@
-import { createContext, useContext, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useMemo, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, setToken, type MeResponse, type Role, type User } from "@/lib/api";
 
@@ -35,17 +35,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     retry: false,
   });
 
-  const permissions = data?.permissions ?? [];
-  const can = (...perms: string[]) =>
-    permissions.includes("*") || perms.some((p) => permissions.includes(p));
+  // permissions/can/login/logout и сам value — стабильные ссылки, иначе провайдер
+  // на каждом своём рендере пересоздавал бы контекст и перерисовывал всё дерево.
+  const permissions = useMemo(() => data?.permissions ?? [], [data?.permissions]);
 
-  async function login(username: string, password: string) {
-    const res = await api.login(username, password);
-    setToken(res.token);
-    await qc.invalidateQueries({ queryKey: ["me"] });
-  }
+  const can = useCallback(
+    (...perms: string[]) => permissions.includes("*") || perms.some((p) => permissions.includes(p)),
+    [permissions],
+  );
 
-  async function logout() {
+  const login = useCallback(
+    async (username: string, password: string) => {
+      const res = await api.login(username, password);
+      setToken(res.token);
+      await qc.invalidateQueries({ queryKey: ["me"] });
+    },
+    [qc],
+  );
+
+  const logout = useCallback(async () => {
     try {
       await api.logout();
     } finally {
@@ -53,19 +61,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       qc.clear();
       await qc.invalidateQueries({ queryKey: ["me"] });
     }
-  }
+  }, [qc]);
 
-  const value: AuthCtx = {
-    loading: isLoading,
-    authEnabled: data?.auth_enabled ?? false,
-    authenticated: data?.authenticated ?? false,
-    user: data?.user ?? null,
-    role: (data?.user?.role as Role) ?? null,
-    permissions,
-    can,
-    login,
-    logout,
-  };
+  const value = useMemo<AuthCtx>(
+    () => ({
+      loading: isLoading,
+      authEnabled: data?.auth_enabled ?? false,
+      authenticated: data?.authenticated ?? false,
+      user: data?.user ?? null,
+      role: (data?.user?.role as Role) ?? null,
+      permissions,
+      can,
+      login,
+      logout,
+    }),
+    [isLoading, data, permissions, can, login, logout],
+  );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

@@ -10,10 +10,10 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
+from app.api.tasks import send_task_to_max
 from app.config import settings
 from app.db import get_db
 from app.logging_config import get_logger
-from app.models import Task
 from app.security import require_permission
 from app.services import max_handler
 from app.services.max_client import MaxClient
@@ -43,13 +43,10 @@ async def max_webhook(request: Request, db: Session = Depends(get_db)):
 
 @router.post("/tasks/{task_id}/notify", dependencies=[Depends(require_permission("tasks.manage"))])
 async def notify_task(task_id: str, db: Session = Depends(get_db), chat_id: str | None = None):
-    """Отправить карточку поручения с кнопкой подтверждения в группу MAX."""
-    task = db.get(Task, task_id)
-    if not task:
-        raise HTTPException(404, "Task not found")
-    if not settings.max.enabled:
-        raise HTTPException(400, "MAX отключён (max.enabled=false)")
-    return await max_handler.notify_task_assigned(db, task, chat_id=chat_id)
+    """DEPRECATED: используйте ``POST /api/tasks/{id}/send-max`` — тот же результат
+    и единая обработка ошибок конфигурации MAX. Оставлено тонкой обёрткой ради
+    обратной совместимости (фронтенд ходит в /send-max)."""
+    return await send_task_to_max(task_id, db=db, chat_id=chat_id)
 
 
 @router.get("/status")

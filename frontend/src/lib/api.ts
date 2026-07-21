@@ -85,6 +85,14 @@ export interface LoginResponse {
   permissions: string[];
 }
 
+export interface DemoAccount {
+  username: string;
+  password: string;
+  role: Role;
+  role_label: string;
+  full_name: string;
+}
+
 export interface TranscriptionListItem {
   id: string;
   filename: string;
@@ -102,7 +110,12 @@ export interface Task {
   responsible: string;
   department: string;
   deadline: string;
+  deadline_at?: string | null; // разобранный срок (наивный UTC), null если не распознан
   status: string;
+  priority: string; // см. TASK_PRIORITY
+  location: string;
+  object: string;
+  theme: string;
   source_fragment: string;
   reason_comment: string;
   confidence: number;
@@ -112,6 +125,136 @@ export interface Task {
   closed_at?: string | null;
   notified_at?: string | null;
   created_at: string;
+}
+
+// Статусы поручения — зеркало backend/app/models.py TASK_STATUSES. Единый источник
+// для фильтров дашборда, select'ов статуса и раскраски (см. lib/utils.ts).
+export const TASK_STATUS = {
+  new: "Новое",
+  review: "Требует проверки",
+  done: "Выполнено",
+} as const;
+export type TaskStatus = (typeof TASK_STATUS)[keyof typeof TASK_STATUS];
+
+// Приоритеты поручения — зеркало backend/app/models.py TASK_PRIORITIES. Порядок —
+// по возрастанию важности (для сортировки/подсветки). Подсветка (4.5.4) и условие
+// рейтинга done_priority — на «Высокий»/«Критический».
+export const TASK_PRIORITY = {
+  low: "Низкий",
+  normal: "Обычный",
+  high: "Высокий",
+  critical: "Критический",
+} as const;
+export type TaskPriority = (typeof TASK_PRIORITY)[keyof typeof TASK_PRIORITY];
+export const TASK_PRIORITIES = Object.values(TASK_PRIORITY);
+// Приоритеты, считающиеся «повышенными» (подсветка + рейтинг).
+export const ELEVATED_PRIORITIES: string[] = [TASK_PRIORITY.high, TASK_PRIORITY.critical];
+
+// --- Аналитический дашборд (п. 4.5) — зеркало backend/app/schemas.py ---
+
+export interface Kpis {
+  total: number;
+  in_work: number;
+  done: number;
+  overdue: number;
+}
+
+export interface RatingBreakdown {
+  condition: string;
+  label: string;
+  count: number;
+  points_each: number;
+  points: number;
+  task_ids: string[];
+}
+
+export interface ExecutorRating {
+  responsible: string;
+  score: number;
+  total_tasks: number;
+  breakdown: RatingBreakdown[];
+}
+
+export interface Highlights {
+  overdue: Task[];
+  priority: Task[];
+}
+
+// Правила рейтинга (п. 4.5.3) — зеркало schemas.RatingRule*.
+export interface RatingCondition {
+  key: string;
+  label: string;
+}
+
+export interface RatingRule {
+  id: string;
+  condition: string;
+  label: string;
+  points: number;
+  enabled: boolean;
+  created_at: string;
+}
+
+export interface RatingRulesResponse {
+  rules: RatingRule[];
+  conditions: RatingCondition[];
+}
+
+export interface FilterOptions {
+  responsibles: string[];
+  locations: string[];
+  objects: string[];
+  themes: string[];
+  priorities: string[];
+  statuses: string[];
+}
+
+export interface DashboardAnalytics {
+  now: string;
+  kpis: Kpis;
+  ratings: ExecutorRating[];
+  highlights: Highlights;
+  filter_options: FilterOptions;
+}
+
+// Утренняя справка (п. 4.5.2) — зеркало schemas.MorningBriefDTO.
+export interface BriefTask {
+  id: string;
+  assignment: string;
+  responsible: string;
+  deadline: string;
+  priority: string;
+}
+
+export interface BriefChanges {
+  since?: string | null;
+  first: boolean;
+  new_tasks: number;
+  newly_done: number;
+  newly_overdue: number;
+}
+
+export interface MorningBrief {
+  id: string;
+  as_of: string;
+  generated_at: string;
+  kpis: Kpis;
+  status_counts: Record<string, number>;
+  overdue: BriefTask[];
+  priority_soon: BriefTask[];
+  changes: BriefChanges;
+}
+
+// Активные фильтры дашборда (все опциональны; период — даты YYYY-MM-DD).
+export interface DashboardFilters {
+  period_from?: string;
+  period_to?: string;
+  responsible?: string;
+  location?: string;
+  object?: string;
+  theme?: string;
+  priority?: string;
+  status?: string;
 }
 
 export interface Protocol {
@@ -126,6 +269,14 @@ export interface Protocol {
   tasks: Task[];
 }
 
+// Частичная правка метаданных/текста протокола (зеркало schemas.ProtocolUpdate).
+export interface ProtocolUpdate {
+  title?: string;
+  date?: string;
+  number?: string;
+  body?: string;
+}
+
 export interface ProtocolListItem {
   id: string;
   title: string;
@@ -134,6 +285,24 @@ export interface ProtocolListItem {
   tasks_count: number;
   created_at: string;
 }
+
+// Редактируемый DOCX-шаблон протокола (зеркало schemas.ProtocolTemplateDTO).
+export interface ProtocolTemplate {
+  id: string;
+  name: string;
+  is_active: boolean;
+  detected_placeholders: string[];
+  field_mapping: Record<string, string>; // {каноническое_поле: плейсхолдер}
+  created_at: string;
+}
+
+export interface ProtocolTemplateMappingUpdate {
+  field_mapping: Record<string, string>;
+}
+
+// Канонический каталог полей — зеркало protocol_template.CANONICAL_FIELDS.
+export const PROTOCOL_CANONICAL_FIELDS = ["title", "date", "number", "body", "tasks"] as const;
+export type ProtocolCanonicalField = (typeof PROTOCOL_CANONICAL_FIELDS)[number];
 
 export interface Justification {
   id: string;
@@ -156,6 +325,18 @@ export interface QAResponse {
   session_id: string;
   answer: string;
   citations: Citation[];
+}
+
+export interface ChatHistoryMessage {
+  role: "user" | "assistant";
+  content: string;
+  citations: Citation[];
+}
+
+export interface ChatHistoryResponse {
+  session_id: string;
+  title: string;
+  messages: ChatHistoryMessage[];
 }
 
 export interface SearchHit {
@@ -193,12 +374,13 @@ export type ExportFmt = "docx" | "pdf" | "md" | "txt" | "json";
 export const api = {
   health: () => http.get<Health>("/api/health").then((r) => r.data),
 
-  uploadTranscription: (file: File, onProgress?: (p: number) => void) => {
+  uploadTranscription: (file: File, onProgress?: (p: number) => void, signal?: AbortSignal) => {
     const fd = new FormData();
     fd.append("file", file);
     return http
       .post<Transcription>("/api/transcriptions", fd, {
         onUploadProgress: (e) => onProgress?.(e.total ? Math.round((e.loaded / e.total) * 100) : 0),
+        signal,
       })
       .then((r) => r.data);
   },
@@ -222,6 +404,8 @@ export const api = {
     http.post<Protocol>("/api/protocols", { transcription_id }).then((r) => r.data),
   listProtocols: () => http.get<ProtocolListItem[]>("/api/protocols").then((r) => r.data),
   getProtocol: (id: string) => http.get<Protocol>(`/api/protocols/${id}`).then((r) => r.data),
+  updateProtocol: (id: string, patch: ProtocolUpdate) =>
+    http.put<Protocol>(`/api/protocols/${id}`, patch).then((r) => r.data),
 
   deleteTranscription: (id: string) =>
     http.delete(`/api/transcriptions/${id}`).then((r) => r.data),
@@ -245,8 +429,25 @@ export const api = {
   buildJustification: (taskId: string) =>
     http.post<Justification>(`/api/tasks/${taskId}/justification`).then((r) => r.data),
 
+  // --- Аналитический дашборд (п. 4.5) ---
+  getDashboardAnalytics: (filters: DashboardFilters = {}) =>
+    http.get<DashboardAnalytics>("/api/analytics/dashboard", { params: filters }).then((r) => r.data),
+  getLatestBrief: () =>
+    http.get<MorningBrief | null>("/api/analytics/brief/latest").then((r) => r.data),
+  generateBrief: () => http.post<MorningBrief>("/api/analytics/brief").then((r) => r.data),
+
+  // --- Правила рейтинга (п. 4.5.3, только admin) ---
+  listRatingRules: () => http.get<RatingRulesResponse>("/api/rating-rules").then((r) => r.data),
+  createRatingRule: (body: { condition: string; points: number; enabled?: boolean }) =>
+    http.post<RatingRule>("/api/rating-rules", body).then((r) => r.data),
+  updateRatingRule: (id: string, patch: { points?: number; enabled?: boolean }) =>
+    http.patch<RatingRule>(`/api/rating-rules/${id}`, patch).then((r) => r.data),
+  deleteRatingRule: (id: string) => http.delete(`/api/rating-rules/${id}`).then((r) => r.data),
+
   ask: (question: string, scope: { protocol_ids: string[]; transcription_ids: string[] }, session_id?: string) =>
     http.post<QAResponse>("/api/qa", { question, scope, session_id }).then((r) => r.data),
+  getSession: (id: string) =>
+    http.get<ChatHistoryResponse>(`/api/qa/sessions/${id}`).then((r) => r.data),
 
   search: (query: string, top_k = 8) =>
     http.post<{ hits: SearchHit[] }>("/api/search", { query, top_k }).then((r) => r.data.hits),
@@ -258,11 +459,30 @@ export const api = {
       .post("/api/export", { object_type, object_id, fmt }, { responseType: "blob" })
       .then((r) => r.data as Blob),
 
+  // --- Редактируемые DOCX-шаблоны протокола (часть 2) ---
+  listProtocolTemplates: () =>
+    http.get<ProtocolTemplate[]>("/api/protocol-templates").then((r) => r.data),
+  getActiveProtocolTemplate: () =>
+    http.get<ProtocolTemplate>("/api/protocol-templates/active").then((r) => r.data),
+  uploadProtocolTemplate: (file: File) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    return http.post<ProtocolTemplate>("/api/protocol-templates", fd).then((r) => r.data);
+  },
+  updateProtocolTemplateMapping: (id: string, mapping: Record<string, string>) =>
+    http
+      .put<ProtocolTemplate>(`/api/protocol-templates/${id}/mapping`, { field_mapping: mapping })
+      .then((r) => r.data),
+  activateProtocolTemplate: (id: string) =>
+    http.post<ProtocolTemplate>(`/api/protocol-templates/${id}/activate`).then((r) => r.data),
+
   // --- Авторизация / пользователи (ТЗ 3) ---
   me: () => http.get<MeResponse>("/api/auth/me").then((r) => r.data),
   login: (username: string, password: string) =>
     http.post<LoginResponse>("/api/auth/login", { username, password }).then((r) => r.data),
   logout: () => http.post("/api/auth/logout").then((r) => r.data),
+  demoAccounts: () =>
+    http.get<{ accounts: DemoAccount[] }>("/api/auth/demo").then((r) => r.data.accounts),
   listUsers: () => http.get<User[]>("/api/auth/users").then((r) => r.data),
   createUser: (body: { username: string; password: string; full_name: string; role: Role }) =>
     http.post<User>("/api/auth/users", body).then((r) => r.data),
@@ -271,11 +491,21 @@ export const api = {
   deleteUser: (id: string) => http.delete(`/api/auth/users/${id}`).then((r) => r.data),
 };
 
+/** Убрать из имени файла символы, недопустимые в путях (Windows/macOS/Linux). */
+function sanitizeFilename(name: string): string {
+  const cleaned = name
+    .replace(/[\\/:*?"<>|\u0000-\u001f]/g, "_")
+    .replace(/\s+/g, " ")
+    .trim();
+  return cleaned.slice(0, 200) || "file";
+}
+
 export function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = filename;
+  a.rel = "noopener";
+  a.download = sanitizeFilename(filename);
   a.click();
   URL.revokeObjectURL(url);
 }

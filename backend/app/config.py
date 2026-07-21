@@ -98,6 +98,9 @@ class AuthSettings(BaseModel):
     admin_username: str = "admin"
     admin_password: str = "admin"
     admin_full_name: str = "Администратор"
+    # Демо-режим: посеять пользователей всех ролей с известными паролями и показать
+    # их на странице входа (GET /api/auth/demo). Только для демонстраций.
+    seed_demo: bool = False
 
 
 class UploadSettings(BaseModel):
@@ -125,6 +128,15 @@ class ExecutionControlSettings(BaseModel):
 
 class QASettings(BaseModel):
     max_context_chars: int = 24000  # обрезка контекста, чтобы не переполнить промпт
+
+
+class AnalyticsSettings(BaseModel):
+    """Аналитический дашборд и утренняя справка (п. 4.5)."""
+
+    # Плановое формирование утренней справки. Единственный новый фоновый job —
+    # интегрирован в lifespan рядом с планировщиком напоминаний. Зона — max.timezone.
+    morning_brief_enabled: bool = True
+    morning_brief_time: str = "08:00"  # локальное время ежедневного формирования
 
 
 class Settings(BaseModel):
@@ -156,6 +168,7 @@ class Settings(BaseModel):
     export: ExportSettings = Field(default_factory=ExportSettings)
     execution_control: ExecutionControlSettings = Field(default_factory=ExecutionControlSettings)
     qa: QASettings = Field(default_factory=QASettings)
+    analytics: AnalyticsSettings = Field(default_factory=AnalyticsSettings)
 
 
 def _candidate_config_paths() -> list[Path]:

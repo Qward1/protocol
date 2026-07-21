@@ -3,17 +3,18 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Users, UserPlus, Trash2, ShieldCheck, KeyRound, Check, X, Ban } from "lucide-react";
 import clsx from "clsx";
 import { api, type Role, type User } from "@/lib/api";
-import { PageHeader, Empty, Spinner } from "@/components/ui";
+import { PageHeader, Empty, Spinner, Skeleton, SectionTitle, ConfirmDialog } from "@/components/ui";
 import { useAuth, ROLE_LABELS } from "@/lib/auth";
-import { fmtDate } from "@/lib/utils";
+import { fmtDate, personTint } from "@/lib/utils";
 
 const ROLES: Role[] = ["admin", "head", "staff", "executor"];
 
+// Тон роли через семантические токены — без ручных dark:-веток.
 const ROLE_TINT: Record<Role, string> = {
-  admin: "bg-rose-500/15 text-rose-600 dark:text-rose-300",
-  head: "bg-violet-500/15 text-violet-600 dark:text-violet-300",
-  staff: "bg-sky-500/15 text-sky-600 dark:text-sky-300",
-  executor: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-300",
+  admin: "bg-danger/15 text-danger",
+  head: "bg-accent/15 text-accent",
+  staff: "bg-info/15 text-info",
+  executor: "bg-success/15 text-success",
 };
 
 export default function AdminUsersPage() {
@@ -23,6 +24,7 @@ export default function AdminUsersPage() {
 
   const [form, setForm] = useState({ username: "", password: "", full_name: "", role: "executor" as Role });
   const [error, setError] = useState("");
+  const [confirmDel, setConfirmDel] = useState<User | null>(null);
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["users"] });
 
@@ -56,20 +58,22 @@ export default function AdminUsersPage() {
 
       {/* Создание пользователя */}
       <div className="card p-4">
-        <div className="mb-3 flex items-center gap-2">
-          <UserPlus className="h-4 w-4 text-accent" />
-          <h2 className="text-sm font-bold uppercase tracking-wider text-muted">Новый пользователь</h2>
-        </div>
+        <SectionTitle>Новый пользователь</SectionTitle>
         <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-5">
           <input
             className="input"
             placeholder="Логин"
+            autoComplete="off"
+            spellCheck={false}
+            autoCapitalize="none"
+            aria-label="Логин"
             value={form.username}
             onChange={(e) => setForm({ ...form, username: e.target.value })}
           />
           <input
             className="input"
             placeholder="ФИО"
+            aria-label="ФИО"
             value={form.full_name}
             onChange={(e) => setForm({ ...form, full_name: e.target.value })}
           />
@@ -77,6 +81,8 @@ export default function AdminUsersPage() {
             className="input"
             type="password"
             placeholder="Пароль"
+            autoComplete="new-password"
+            aria-label="Пароль"
             value={form.password}
             onChange={(e) => setForm({ ...form, password: e.target.value })}
           />
@@ -100,13 +106,25 @@ export default function AdminUsersPage() {
             Создать
           </button>
         </div>
-        {error && <p className="mt-3 text-sm text-rose-500">{error}</p>}
+        {error && (
+          <p role="alert" className="mt-3 text-sm text-danger">
+            {error}
+          </p>
+        )}
       </div>
 
       {/* Список пользователей */}
       {isLoading ? (
-        <div className="flex justify-center py-16">
-          <Spinner className="h-6 w-6 text-accent" />
+        <div className="space-y-2">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="card flex items-center gap-3 p-4">
+              <Skeleton className="h-10 w-10 shrink-0 rounded-lg" />
+              <div className="flex-1 space-y-2">
+                <Skeleton className="h-4 w-40" />
+                <Skeleton className="h-3 w-56" />
+              </div>
+            </div>
+          ))}
         </div>
       ) : !users?.length ? (
         <Empty icon={Users} title="Пользователей пока нет" />
@@ -122,11 +140,29 @@ export default function AdminUsersPage() {
               onResetPassword={(password) => update.mutate({ id: u.id, patch: { password } })}
               onDelete={() => {
                 setError("");
-                if (confirm(`Удалить пользователя «${u.username}»?`)) remove.mutate(u.id);
+                setConfirmDel(u);
               }}
             />
           ))}
         </div>
+      )}
+
+      {confirmDel && (
+        <ConfirmDialog
+          title="Удалить пользователя?"
+          description={
+            <>
+              Учётная запись <span className="font-medium text-fg">«{confirmDel.username}»</span> будет удалена
+              без возможности восстановления.
+            </>
+          }
+          confirmLabel="Удалить"
+          busy={remove.isPending}
+          onConfirm={() => {
+            remove.mutate(confirmDel.id, { onSuccess: () => setConfirmDel(null) });
+          }}
+          onClose={() => setConfirmDel(null)}
+        />
       )}
     </div>
   );
@@ -153,14 +189,17 @@ function UserRow({
   return (
     <div className={clsx("card p-4", !u.is_active && "opacity-60")}>
       <div className="flex flex-wrap items-center gap-3">
-        <div className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-accent/12 text-sm font-bold text-accent">
+        <div
+          className="grid h-10 w-10 shrink-0 place-items-center rounded-lg text-sm font-semibold"
+          style={personTint(u.full_name || u.username)}
+        >
           {(u.full_name || u.username).trim().charAt(0).toUpperCase() || "?"}
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <span className="truncate font-semibold">{u.full_name || u.username}</span>
             {isSelf && <span className="chip">вы</span>}
-            {!u.is_active && <span className="chip text-rose-500">заблокирован</span>}
+            {!u.is_active && <span className="chip border-transparent bg-danger/15 text-danger">заблокирован</span>}
           </div>
           <div className="text-xs text-muted">
             @{u.username} · создан {fmtDate(u.created_at)}
@@ -168,11 +207,12 @@ function UserRow({
         </div>
 
         <label className="flex items-center gap-2">
-          <ShieldCheck className="h-4 w-4 text-muted" />
+          <ShieldCheck className="h-4 w-4 text-muted" aria-hidden />
           <select
             className={clsx("input h-9 w-auto py-1 font-semibold", ROLE_TINT[u.role])}
             value={u.role}
             onChange={(e) => onRole(e.target.value as Role)}
+            aria-label={`Роль пользователя ${u.username}`}
           >
             {ROLES.map((r) => (
               <option key={r} value={r}>
@@ -185,30 +225,40 @@ function UserRow({
         <button
           className="icon-btn"
           title={editingPwd ? "Отменить" : "Сбросить пароль"}
+          aria-label={editingPwd ? "Отменить сброс пароля" : `Сбросить пароль пользователя ${u.username}`}
+          aria-expanded={editingPwd}
           onClick={() => setEditingPwd((v) => !v)}
         >
-          <KeyRound className="h-4 w-4" />
+          <KeyRound className="h-4 w-4" aria-hidden />
         </button>
         <button
           className="icon-btn"
           title={u.is_active ? "Заблокировать" : "Разблокировать"}
+          aria-label={u.is_active ? `Заблокировать ${u.username}` : `Разблокировать ${u.username}`}
           onClick={onToggleActive}
         >
-          {u.is_active ? <Ban className="h-4 w-4" /> : <Check className="h-4 w-4" />}
+          {u.is_active ? <Ban className="h-4 w-4" aria-hidden /> : <Check className="h-4 w-4" aria-hidden />}
         </button>
         {!isSelf && (
-          <button className="icon-btn hover:!text-rose-500" title="Удалить" onClick={onDelete}>
-            <Trash2 className="h-4 w-4" />
+          <button
+            className="icon-btn hover:!border-danger/40 hover:!text-danger"
+            title="Удалить"
+            aria-label={`Удалить пользователя ${u.username}`}
+            onClick={onDelete}
+          >
+            <Trash2 className="h-4 w-4" aria-hidden />
           </button>
         )}
       </div>
 
       {editingPwd && (
-        <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-border/70 pt-3">
+        <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-border pt-3">
           <input
             className="input h-9 max-w-xs py-1"
             type="password"
             placeholder="Новый пароль"
+            autoComplete="new-password"
+            aria-label={`Новый пароль для ${u.username}`}
             value={pwd}
             onChange={(e) => setPwd(e.target.value)}
           />
@@ -221,10 +271,10 @@ function UserRow({
               setEditingPwd(false);
             }}
           >
-            <Check className="h-4 w-4" /> Сохранить
+            <Check className="h-4 w-4" aria-hidden /> Сохранить
           </button>
           <button className="btn-ghost h-9 py-1" onClick={() => { setPwd(""); setEditingPwd(false); }}>
-            <X className="h-4 w-4" /> Отмена
+            <X className="h-4 w-4" aria-hidden /> Отмена
           </button>
         </div>
       )}

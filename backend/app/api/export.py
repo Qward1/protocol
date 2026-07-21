@@ -9,10 +9,18 @@ from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models import ChatSession, Justification, Protocol, Task, Transcription
+from app.models import (
+    ChatSession,
+    Justification,
+    MorningBrief,
+    Protocol,
+    ProtocolTemplate,
+    Task,
+    Transcription,
+)
 from app.schemas import ExportRequest
 from app.security import require_permission
-from app.services import exporter
+from app.services import exporter, protocol_template
 
 router = APIRouter(prefix="/api/export", tags=["export"])
 
@@ -37,6 +45,21 @@ def export_object(req: ExportRequest, db: Session = Depends(get_db)):
         p = db.get(Protocol, req.object_id)
         if not p:
             raise HTTPException(404, "Not found")
+        # DOCX по активному редактируемому шаблону (часть 2). Нет шаблона —
+        # прежнее поведение (generic markdown->docx ниже), без 500.
+        if req.fmt == "docx":
+            active = (
+                db.query(ProtocolTemplate)
+                .filter(ProtocolTemplate.is_active.is_(True))
+                .order_by(ProtocolTemplate.created_at.desc())
+                .first()
+            )
+            if active:
+                try:
+                    path = exporter.render_protocol_docx(p, active)
+                except protocol_template.ProtocolTemplateError as exc:
+                    raise HTTPException(400, str(exc))
+                return FileResponse(str(path), filename=path.name)
         md = exporter.protocol_to_md(p)
         raw = json.loads(p.raw_json or "{}")
         name = f"protocol_{p.id}"
@@ -57,6 +80,14 @@ def export_object(req: ExportRequest, db: Session = Depends(get_db)):
         md = exporter.justification_to_md(j, task)
         raw = {"fragment": j.fragment, "duty": j.duty, "text": j.text}
         name = f"justification_{j.id}"
+
+    elif req.object_type == "brief":
+        brief = db.get(MorningBrief, req.object_id)
+        if not brief:
+            raise HTTPException(404, "Not found")
+        md = exporter.brief_to_md(brief)
+        raw = json.loads(brief.payload_json or "{}")
+        name = f"brief_{brief.id}"
 
     else:
         raise HTTPException(400, f"Unknown object_type: {req.object_type}")

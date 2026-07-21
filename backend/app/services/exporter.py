@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+from datetime import timezone
 import json
 from pathlib import Path
 
@@ -95,6 +96,81 @@ def justification_to_md(j, task) -> str:
 def _fmt_ts(seconds: float) -> str:
     s = int(seconds)
     return f"{s // 60:02d}:{s % 60:02d}"
+
+
+def _fmt_local(dt) -> str:
+    """Наивный UTC -> «ДД.ММ.ГГГГ ЧЧ:ММ» в настроенной зоне (для справки)."""
+    if dt is None:
+        return "-"
+    try:
+        from zoneinfo import ZoneInfo
+
+        local = dt.replace(tzinfo=timezone.utc).astimezone(ZoneInfo(settings.max.timezone))
+        return local.strftime("%d.%m.%Y %H:%M")
+    except Exception:
+        return dt.strftime("%d.%m.%Y %H:%M")
+
+
+def brief_to_md(brief) -> str:
+    """Markdown утренней справки из сохранённого снимка (без обращения к LLM).
+
+    Справка целиком детерминирована: цифры и перечни берутся из ``payload_json``,
+    рассчитанного ``analytics.build_brief`` по данным реестра поручений (4.5.5)."""
+    payload = json.loads(brief.payload_json or "{}")
+    kpis = payload.get("kpis") or {}
+    lines = [
+        "# Утренняя справка по исполнительской дисциплине",
+        "",
+        f"**Срез (дата/время):** {_fmt_local(brief.as_of)}",
+        f"**Сформирована:** {_fmt_local(brief.generated_at)}",
+        "",
+        "## Показатели за отчётный период",
+        "",
+        f"- Всего поручений: {kpis.get('total', 0)}",
+        f"- В работе: {kpis.get('in_work', 0)}",
+        f"- Исполнено: {kpis.get('done', 0)}",
+        f"- Просрочено: {kpis.get('overdue', 0)}",
+    ]
+
+    status_counts = payload.get("status_counts") or {}
+    if status_counts:
+        lines += ["", "По статусам:"]
+        lines += [f"- {status}: {count}" for status, count in status_counts.items()]
+
+    overdue = payload.get("overdue") or []
+    lines += ["", "## Просроченные поручения", ""]
+    if overdue:
+        lines += ["| Поручение | Ответственный | Срок |", "|---|---|---|"]
+        lines += [
+            f"| {t.get('assignment', '')} | {t.get('responsible', '')} | {t.get('deadline', '')} |"
+            for t in overdue
+        ]
+    else:
+        lines.append("Просроченных поручений нет.")
+
+    priority_soon = payload.get("priority_soon") or []
+    lines += ["", "## Приоритетные поручения с приближающимся сроком", ""]
+    if priority_soon:
+        lines += ["| Поручение | Ответственный | Срок | Приоритет |", "|---|---|---|---|"]
+        lines += [
+            f"| {t.get('assignment', '')} | {t.get('responsible', '')} | "
+            f"{t.get('deadline', '')} | {t.get('priority', '')} |"
+            for t in priority_soon
+        ]
+    else:
+        lines.append("Нет приоритетных поручений с приближающимся сроком.")
+
+    changes = payload.get("changes") or {}
+    lines += ["", "## Изменения с прошлой справки", ""]
+    if changes.get("first"):
+        lines.append("Это первая справка — сравнивать не с чем.")
+    else:
+        lines += [
+            f"- Новых поручений: {changes.get('new_tasks', 0)}",
+            f"- Исполнено с прошлой справки: {changes.get('newly_done', 0)}",
+            f"- Стало просроченными: {changes.get('newly_overdue', 0)}",
+        ]
+    return "\n".join(lines)
 
 
 # --- рендереры форматов ---
@@ -205,6 +281,16 @@ def _write_pdf(md: str, out: Path) -> Path:
         story.append(Paragraph(text, style))
     doc.build(story)
     return out
+
+
+def render_protocol_docx(protocol, template) -> Path:
+    """DOCX протокола по активному шаблону (docxtpl), часть 2.
+
+    Заменяет generic markdown->docx для протокола, когда есть активный шаблон.
+    Сам рендеринг — в services.protocol_template (не LLM-логика, зона backend)."""
+    from app.services import protocol_template
+
+    return protocol_template.render(protocol, template)
 
 
 def render(md: str, raw_obj: dict, fmt: str, name: str) -> Path:

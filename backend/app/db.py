@@ -40,6 +40,12 @@ _TASK_ADDED_COLUMNS = {
     "memo_path": "VARCHAR DEFAULT ''",
     "reminder_sent": "BOOLEAN DEFAULT 0",
     "notified_at": "DATETIME",
+    "deadline_at": "DATETIME",
+    # Срезы аналитического дашборда (п. 4.5): приоритет + локация/объект/тема.
+    "priority": "VARCHAR DEFAULT 'Обычный'",
+    "location": "VARCHAR DEFAULT ''",
+    "object": "VARCHAR DEFAULT ''",
+    "theme": "VARCHAR DEFAULT ''",
 }
 
 

@@ -21,8 +21,33 @@ def _uuid() -> str:
     return str(uuid.uuid4())
 
 
+# Допустимые статусы поручения. Единый источник правды: используется и как
+# значение по умолчанию у Task.status, и для валидации API (schemas.TaskUpdate).
+TASK_STATUS_NEW = "Новое"
+TASK_STATUS_REVIEW = "Требует проверки"
+TASK_STATUS_DONE = "Выполнено"
+TASK_STATUSES: tuple[str, ...] = (TASK_STATUS_NEW, TASK_STATUS_REVIEW, TASK_STATUS_DONE)
+
+# Приоритет поручения (аналитика/подсветка, п. 4.5). Единый источник правды —
+# как и статусы: значение по умолчанию Task.priority, валидация в schemas.TaskUpdate,
+# зеркало TASK_PRIORITY в frontend/src/lib/api.ts. Подсветка (4.5.4) и условие
+# рейтинга done_priority срабатывают на «Высокий»/«Критический».
+TASK_PRIORITY_LOW = "Низкий"
+TASK_PRIORITY_NORMAL = "Обычный"
+TASK_PRIORITY_HIGH = "Высокий"
+TASK_PRIORITY_CRITICAL = "Критический"
+TASK_PRIORITIES: tuple[str, ...] = (
+    TASK_PRIORITY_LOW, TASK_PRIORITY_NORMAL, TASK_PRIORITY_HIGH, TASK_PRIORITY_CRITICAL,
+)
+# Приоритеты, считающиеся «повышенными» (подсветка + условие рейтинга done_priority).
+TASK_ELEVATED_PRIORITIES: frozenset[str] = frozenset({TASK_PRIORITY_HIGH, TASK_PRIORITY_CRITICAL})
+
+
 def _now() -> datetime:
-    # Наивный UTC (совместим с колонками DateTime), без deprecated utcnow().
+    # Политика таймзон: ВСЕ datetime-поля БД (created_at, closed_at, notified_at,
+    # deadline_at, expires_at, ...) хранятся в наивном UTC. Срок вводится в местном
+    # времени, но services.deadlines.parse_deadline переводит его в UTC при записи,
+    # поэтому сравнения (напоминания) идут в одной зоне.
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
@@ -119,8 +144,18 @@ class Task(Base):
     assignment: Mapped[str] = mapped_column(Text, default="")
     responsible: Mapped[str] = mapped_column(String, default="")
     department: Mapped[str] = mapped_column(String, default="")
-    deadline: Mapped[str] = mapped_column(String, default="")
-    status: Mapped[str] = mapped_column(String, default="Новое")  # Новое|Требует проверки|Выполнено
+    deadline: Mapped[str] = mapped_column(String, default="")  # исходная строка от LLM/пользователя
+    # Разобранный срок в наивном UTC (см. services/deadlines.parse_deadline).
+    # Единый источник истины для сортировки, «просрочено» и напоминаний; NULL —
+    # если строку не удалось распознать.
+    deadline_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    status: Mapped[str] = mapped_column(String, default=TASK_STATUS_NEW)  # см. TASK_STATUSES
+    # Срезы для аналитического дашборда и фильтров (п. 4.5). priority — из
+    # TASK_PRIORITIES; location/object/theme — свободный текст, как department.
+    priority: Mapped[str] = mapped_column(String, default=TASK_PRIORITY_NORMAL)
+    location: Mapped[str] = mapped_column(String, default="")
+    object: Mapped[str] = mapped_column(String, default="")
+    theme: Mapped[str] = mapped_column(String, default="")
     source_fragment: Mapped[str] = mapped_column(Text, default="")
     reason_comment: Mapped[str] = mapped_column(Text, default="")
     confidence: Mapped[float] = mapped_column(Float, default=0.0)
@@ -157,6 +192,61 @@ class Justification(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
     task: Mapped[Task] = relationship(back_populates="justification")
+
+
+class ProtocolTemplate(Base):
+    """Загруженный пользователем DOCX-шаблон протокола (docxtpl, часть 2).
+
+    Плейсхолдеры Jinja2 вписаны прямо в текст Word-документа. Одновременно
+    активен ровно один шаблон (``is_active``); история версий сохраняется.
+    ``field_mapping_json`` — {каноническое_поле: имя_плейсхолдера_в_файле}."""
+
+    __tablename__ = "protocol_templates"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    name: Mapped[str] = mapped_column(String, default="")
+    docx_path: Mapped[str] = mapped_column(String, default="")
+    is_active: Mapped[bool] = mapped_column(Boolean, default=False)
+    detected_placeholders_json: Mapped[str] = mapped_column(Text, default="[]")
+    field_mapping_json: Mapped[str] = mapped_column(Text, default="{}")  # {canonical_field: placeholder}
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+
+
+class RatingRule(Base):
+    """Настраиваемое правило начисления баллов рейтинга исполнителей (п. 4.5.3).
+
+    ``condition`` — ключ из фиксированного каталога ``analytics.RATING_CONDITIONS``
+    (исполнено в срок / с опозданием / просрочено / исполнено приоритетное).
+    ``points`` — начисление (или списание при отрицательном) за одно поручение,
+    подошедшее под условие. Заказчик (роль admin) правит баллы/включённость через
+    UI — без изменения кода. Одно правило на условие.
+    """
+
+    __tablename__ = "rating_rules"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    condition: Mapped[str] = mapped_column(String, index=True)
+    points: Mapped[float] = mapped_column(Float, default=0.0)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+
+
+class MorningBrief(Base):
+    """Автоматическая утренняя справка — детерминированный снимок реестра (п. 4.5.2).
+
+    Формируется по расписанию (и вручную) сервисом ``morning_brief`` из данных
+    ``Task`` без обращения к LLM. ``payload_json`` — полный снимок (счётчики по
+    статусам, просроченные, приоритетные с приближающимся сроком, изменения с
+    прошлой справки). ``as_of`` — срез (наивный UTC), на который посчитаны цифры.
+    """
+
+    __tablename__ = "morning_briefs"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    as_of: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    generated_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    payload_json: Mapped[str] = mapped_column(Text, default="{}")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
 
 class ConfirmationSession(Base):

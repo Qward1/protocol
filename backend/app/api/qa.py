@@ -5,13 +5,19 @@ from __future__ import annotations
 import json
 import re
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.db import get_db
 from app.models import ChatMessage, ChatSession, Protocol, Transcription
-from app.schemas import Citation, QARequest, QAResponse
+from app.schemas import (
+    ChatHistoryMessage,
+    ChatHistoryResponse,
+    Citation,
+    QARequest,
+    QAResponse,
+)
 from app.security import require_permission
 from app.services import dify_client
 
@@ -84,10 +90,14 @@ async def ask(req: QARequest, db: Session = Depends(get_db)):
     context, citations = _build_context(db, req)
     db.add(ChatMessage(session_id=session.id, role="user", content=req.question))
 
-    query = f"{req.question}\n\n=== КОНТЕКСТ ===\n{context}" if context else req.question
+    # Классификатор Dify маршрутизирует по sys.query (см. dify/WORKFLOW.md). Если
+    # положить в query весь контекст встречи, классификатор «перетягивает» запрос в
+    # ветку извлечения протокола (наблюдалось на живом workflow). Поэтому в маршрутную
+    # строку кладём только короткий вопрос — полный контекст узел «Вопросы» читает из
+    # inputs.context ({{#start.context#}}), а не из query.
     result = await dify_client.run_command(
         command=settings.dify.command_qa,
-        query=query,
+        query=req.question,
         inputs={"question": req.question, "context": context},
         name_hint=f"qa_{session.id}",
     )
@@ -100,3 +110,28 @@ async def ask(req: QARequest, db: Session = Depends(get_db)):
     db.commit()
 
     return QAResponse(session_id=session.id, answer=answer, citations=citations)
+
+
+@router.get(
+    "/sessions/{session_id}", response_model=ChatHistoryResponse,
+    dependencies=[Depends(require_permission("qa.use"))],
+)
+def get_session(session_id: str, db: Session = Depends(get_db)):
+    """История сообщений сессии — для продолжения прошлого разговора в UI."""
+    session = db.get(ChatSession, session_id)
+    if not session:
+        raise HTTPException(404, "Session not found")
+
+    messages: list[ChatHistoryMessage] = []
+    for m in session.messages:  # relationship упорядочен по created_at
+        cits: list[Citation] = []
+        if m.citations_json:
+            try:
+                raw = json.loads(m.citations_json)
+                if isinstance(raw, list):
+                    cits = [Citation(**c) for c in raw if isinstance(c, dict)]
+            except (ValueError, TypeError):
+                cits = []
+        messages.append(ChatHistoryMessage(role=m.role, content=m.content, citations=cits))
+
+    return ChatHistoryResponse(session_id=session.id, title=session.title, messages=messages)

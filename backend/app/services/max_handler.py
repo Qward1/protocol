@@ -17,11 +17,10 @@ import httpx
 from sqlalchemy.orm import Session
 
 from app.logging_config import get_logger
-from app.models import ConfirmationSession, Task
+from app.models import TASK_STATUS_DONE, TASK_STATUS_REVIEW, ConfirmationSession, Task, _now
 from app.config import settings
 from app.services import memo
 from app.services.max_client import MaxClient, confirmation_keyboard, manager_approval_keyboard
-from app.services.reminders import now_local_naive
 
 log = get_logger("max-handler")
 
@@ -127,7 +126,7 @@ async def _handle_employee_confirmation(db: Session, update: dict, payload: str)
         await MaxClient().answer_callback(_callback_id(update), notification="Задача не найдена")
         return {"error": "task not found"}
 
-    now = now_local_naive()
+    now = _now()
     # Гасим прочие активные сессии этого пользователя.
     db.query(ConfirmationSession).filter(
         ConfirmationSession.max_user_id == user_id,
@@ -162,8 +161,8 @@ async def _handle_manager_approval(db: Session, update: dict, payload: str) -> d
         await MaxClient().answer_callback(_callback_id(update), notification="Нет текста исполнения")
         return {"error": "completion text is empty"}
 
-    task.closed_at = now_local_naive()
-    task.status = "Выполнено"
+    task.closed_at = _now()
+    task.status = TASK_STATUS_DONE
     db.commit()
     db.refresh(task)
 
@@ -198,7 +197,7 @@ async def _handle_message(db: Session, update: dict) -> dict:
     if not user_id or not text:
         return {"ignored": True}
 
-    now = now_local_naive()
+    now = _now()
     session = (
         db.query(ConfirmationSession)
         .filter(ConfirmationSession.max_user_id == user_id)
@@ -217,7 +216,7 @@ async def _handle_message(db: Session, update: dict) -> dict:
         return {"error": "task not found"}
 
     task.completion_text = text
-    task.status = "Требует проверки"
+    task.status = TASK_STATUS_REVIEW
     session.active = False
     db.commit()
     db.refresh(task)
@@ -259,7 +258,7 @@ async def notify_task_assigned(db: Session, task: Task, chat_id: str | None = No
         return {"error": str(exc)}
     if not result.get("error") and not result.get("disabled"):
         task.max_chat_id = target
-        task.notified_at = now_local_naive()
+        task.notified_at = _now()
         db.commit()
     return result
 

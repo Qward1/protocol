@@ -6,7 +6,11 @@
     "moduleResolution": "bundler",
     "allowSyntheticDefaultImports": true,
     "types": ["node"],
-    "strict": true
+    "strict": true,
+    // build-mode требует emit у referenced-проекта; уводим артефакты в
+    // node_modules/.tmp (gitignored), чтобы не засорять дерево vite.config.js/.d.ts.
+    "outDir": "./node_modules/.tmp/vite-config",
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.node.tsbuildinfo"
   },
   "include": ["vite.config.ts"]
 }

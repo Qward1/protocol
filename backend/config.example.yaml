@@ -26,8 +26,12 @@ auth:
   admin_username: admin             # начальный логин администратора
   admin_password: admin             # начальный пароль (СМЕНИТЕ после первого входа!)
   admin_full_name: Администратор
+  seed_demo: false                  # true -> посеять демо-пользователей всех ролей и показать
+                                    #         их логины/пароли на странице входа (GET /api/auth/demo).
+                                    #         Только для демонстраций — НЕ включать в проде.
   # Роли: admin (полный доступ) · head (глава: просмотр) ·
   #       staff (секретарь: ведение встреч/поручений) · executor (исполнитель: только свои поручения)
+  # Демо-логины при seed_demo=true: admin/demoadmin · head/demohead · staff/demostaff · executor/demoexec
 
 upload:
   max_mb: 1024
@@ -51,6 +55,12 @@ export:
 
 qa:
   max_context_chars: 24000          # обрезка контекста под промпт
+
+analytics:
+  # Аналитический дашборд и утренняя справка (п. 4.5). Все показатели считаются
+  # детерминированно из таблицы поручений — без Dify/LLM.
+  morning_brief_enabled: true       # плановое формирование утренней справки
+  morning_brief_time: "08:00"       # локальное время (зона — max.timezone)
 
 execution_control:
   enabled: false                    # дублировать поручения во внешний сервис задач

@@ -2,3 +2,8 @@ node_modules/
 dist/
 *.local
 .vite/
+
+# Артефакты tsc -b / типизации vite.config (не коммитим — генерируются сборкой)
+vite.config.js
+vite.config.d.ts
+*.tsbuildinfo

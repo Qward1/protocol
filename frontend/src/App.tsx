@@ -2,6 +2,7 @@ import { Routes, Route, Navigate } from "react-router-dom";
 import type { ReactNode } from "react";
 import Layout from "@/components/Layout";
 import DashboardPage from "@/pages/DashboardPage";
+import AnalyticsPage from "@/pages/AnalyticsPage";
 import UploadPage from "@/pages/UploadPage";
 import TranscriptPage from "@/pages/TranscriptPage";
 import LibraryPage from "@/pages/LibraryPage";
@@ -10,6 +11,8 @@ import ProtocolsListPage from "@/pages/ProtocolsListPage";
 import ChatPage from "@/pages/ChatPage";
 import LoginPage from "@/pages/LoginPage";
 import AdminUsersPage from "@/pages/AdminUsersPage";
+import RatingRulesPage from "@/pages/RatingRulesPage";
+import ProtocolTemplatePage from "@/pages/ProtocolTemplatePage";
 import { useAuth } from "@/lib/auth";
 import { Spinner } from "@/components/ui";
 
@@ -43,6 +46,14 @@ export default function App() {
           element={
             <RequirePerm perms={["dashboard.view", "tasks.view_own", "tasks.view_all"]}>
               <DashboardPage />
+            </RequirePerm>
+          }
+        />
+        <Route
+          path="analytics"
+          element={
+            <RequirePerm perms={["dashboard.view"]}>
+              <AnalyticsPage />
             </RequirePerm>
           }
         />
@@ -99,6 +110,22 @@ export default function App() {
           element={
             <RequirePerm perms={["users.manage"]}>
               <AdminUsersPage />
+            </RequirePerm>
+          }
+        />
+        <Route
+          path="protocol-template"
+          element={
+            <RequirePerm perms={["templates.manage"]}>
+              <ProtocolTemplatePage />
+            </RequirePerm>
+          }
+        />
+        <Route
+          path="rating-rules"
+          element={
+            <RequirePerm perms={["rating_rules.manage"]}>
+              <RatingRulesPage />
             </RequirePerm>
           }
         />

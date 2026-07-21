@@ -4,3 +4,8 @@ __pycache__/
 *.pyc
 .venv/
 .env
+
+# Локальные логи запуска uvicorn (uv2.out/err, uvicorn_8080.out/err, ...)
+*.out
+*.err
+*.log

@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+import re
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.db import get_db
 from app.logging_config import get_logger
-from app.models import Justification, Task, _now
+from app.models import TASK_STATUS_DONE, TASK_STATUS_REVIEW, Justification, Task, _now
 from app.schemas import (
     JustificationDTO,
     TaskConfirm,
@@ -18,9 +20,23 @@ from app.schemas import (
 )
 from app.security import current_principal, require_permission
 from app.services import auth, dify_client, max_bridge, max_handler, memo
+from app.services.deadlines import parse_deadline
 
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
 log = get_logger("tasks")
+
+# Неразрешённый плейсхолдер Dify-workflow (например {{#context#}}) — когда узел
+# «Поиск должностных обязанностей» не подключён к датасету, шаблон утекает в ответ.
+# Не показываем пользователю сырой синтаксис шаблона.
+_DIFY_PLACEHOLDER = re.compile(r"\{\{#.*?#\}\}")
+
+
+def _strip_unresolved(value: object) -> str:
+    """Пусто, если в тексте остался неразрешённый плейсхолдер Dify; иначе — сам текст."""
+    text = str(value or "").strip()
+    if _DIFY_PLACEHOLDER.search(text):
+        return ""
+    return text
 
 
 def _ensure_task_access(request: Request, task: Task) -> None:
@@ -82,8 +98,12 @@ async def update_task(task_id: str, body: TaskUpdate, db: Session = Depends(get_
     task = db.get(Task, task_id)
     if not task:
         raise HTTPException(404, "Task not found")
-    for field, value in body.model_dump(exclude_unset=True).items():
+    updates = body.model_dump(exclude_unset=True)
+    for field, value in updates.items():
         setattr(task, field, value)
+    # Срок менялся -> пересчитываем разобранный deadline_at (единый источник истины).
+    if "deadline" in updates:
+        task.deadline_at = parse_deadline(task.deadline or "")
     db.commit()
     db.refresh(task)
     return task
@@ -100,7 +120,7 @@ async def submit_execution(task_id: str, body: TaskExecutionSubmit, request: Req
         raise HTTPException(404, "Task not found")
     _ensure_task_access(request, task)  # исполнитель — только своё
     task.completion_text = body.completion_text
-    task.status = "Требует проверки"
+    task.status = TASK_STATUS_REVIEW
     db.commit()
     db.refresh(task)
     return task
@@ -114,7 +134,7 @@ async def confirm_task(task_id: str, body: TaskConfirm, db: Session = Depends(ge
         raise HTTPException(404, "Task not found")
 
     task.closed_at = _now()
-    task.status = "Выполнено"
+    task.status = TASK_STATUS_DONE
 
     # Справка о выполненной работе: Dify, при неудаче — локальный DOCX.
     memo_path = await memo.build_memo(task)
@@ -180,10 +200,10 @@ async def build_justification(task_id: str, db: Session = Depends(get_db)):
         name_hint=f"justification_{task.id}",
     )
 
-    data = dify_client._safe_json_loads(result.answer) if result.answer else {}
-    fragment = data.get("fragment") or task.source_fragment
-    duty = data.get("duty") or data.get("job_duty") or ""
-    text = data.get("text") or result.answer or task.reason_comment
+    data = dify_client.safe_json_loads(result.answer) if result.answer else {}
+    fragment = _strip_unresolved(data.get("fragment")) or task.source_fragment
+    duty = _strip_unresolved(data.get("duty") or data.get("job_duty"))
+    text = _strip_unresolved(data.get("text") or result.answer) or task.reason_comment
 
     just = task.justification or Justification(task_id=task.id)
     just.fragment = fragment

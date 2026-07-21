@@ -146,6 +146,63 @@ def seed_admin(db: Session) -> None:
     db.commit()
 
 
+# --- Демо-пользователи (opt-in auth.seed_demo) -----------------------------
+# Логины/пароли намеренно известны и показываются на странице входа, чтобы
+# продемонстрировать вход разными ролями. Не использовать в проде.
+DEMO_USERS: list[dict[str, str]] = [
+    {"username": "admin", "password": "demoadmin", "full_name": "Администратор (демо)", "role": ROLE_ADMIN},
+    {"username": "head", "password": "demohead", "full_name": "Глава (демо)", "role": ROLE_HEAD},
+    {"username": "staff", "password": "demostaff", "full_name": "Секретарь аппарата (демо)", "role": ROLE_STAFF},
+    {"username": "executor", "password": "demoexec", "full_name": "Исполнитель (демо)", "role": ROLE_EXECUTOR},
+]
+
+
+def seed_demo_users(db: Session) -> None:
+    """Идемпотентно посеять демо-пользователей всех ролей.
+
+    Создаёт отсутствующих и приводит пароль/роль/активность к известным
+    демо-значениям при каждом старте, чтобы GET /api/auth/demo мог честно
+    показывать актуальные логины и пароли.
+    """
+    if not settings.auth.seed_demo:
+        return
+    for spec in DEMO_USERS:
+        user = db.query(User).filter(User.username == spec["username"]).first()
+        if user is None:
+            db.add(
+                User(
+                    username=spec["username"],
+                    full_name=spec["full_name"],
+                    password_hash=hash_password(spec["password"]),
+                    role=spec["role"],
+                    is_active=True,
+                )
+            )
+        else:
+            user.password_hash = hash_password(spec["password"])
+            user.role = spec["role"]
+            user.is_active = True
+            if not user.full_name:
+                user.full_name = spec["full_name"]
+    db.commit()
+
+
+def demo_accounts() -> list[dict[str, str]]:
+    """Список демо-учёток для страницы входа (пусто, если seed_demo выключен)."""
+    if not settings.auth.seed_demo:
+        return []
+    return [
+        {
+            "username": s["username"],
+            "password": s["password"],
+            "role": s["role"],
+            "role_label": ROLE_LABELS[s["role"]],
+            "full_name": s["full_name"],
+        }
+        for s in DEMO_USERS
+    ]
+
+
 def task_belongs_to(task, principal) -> bool:
     """Считается ли поручение «своим» для исполнителя.
 

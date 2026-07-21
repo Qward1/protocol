@@ -1,15 +1,31 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ClipboardPaste, FileAudio, FileText, UploadCloud } from "lucide-react";
+import axios from "axios";
+import { ClipboardPaste, FileAudio, FileText, UploadCloud, X } from "lucide-react";
 import clsx from "clsx";
 import { api } from "@/lib/api";
 import { Card, PageHeader, Spinner } from "@/components/ui";
+import SystemHealthNotice from "@/components/SystemHealthNotice";
 
 const TEXT_EXTENSIONS = [".txt", ".md", ".srt", ".vtt", ".csv", ".log"];
+// Соответствует upload.allowed_extensions в backend/app/config.py.
+const MEDIA_EXTENSIONS = [
+  ".mp3", ".wav", ".m4a", ".ogg", ".flac", ".aac", ".opus",
+  ".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v",
+];
 
 function isTextFile(file: File) {
   const name = file.name.toLowerCase();
   return file.type.startsWith("text/") || TEXT_EXTENSIONS.some((ext) => name.endsWith(ext));
+}
+
+function isMediaFile(file: File) {
+  const name = file.name.toLowerCase();
+  return (
+    file.type.startsWith("audio/") ||
+    file.type.startsWith("video/") ||
+    MEDIA_EXTENSIONS.some((ext) => name.endsWith(ext))
+  );
 }
 
 export default function UploadPage() {
@@ -23,17 +39,43 @@ export default function UploadPage() {
   const [progress, setProgress] = useState<number | null>(null);
   const [savingText, setSavingText] = useState(false);
   const [error, setError] = useState("");
+  const abortRef = useRef<AbortController | null>(null);
+
+  const uploading = progress !== null && progress < 100;
+
+  // Предупреждаем о потере активной загрузки при уходе со страницы/закрытии вкладки.
+  useEffect(() => {
+    if (!uploading) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [uploading]);
 
   async function uploadMedia(file: File) {
     setError("");
     setProgress(0);
+    const controller = new AbortController();
+    abortRef.current = controller;
     try {
-      const t = await api.uploadTranscription(file, setProgress);
+      const t = await api.uploadTranscription(file, setProgress, controller.signal);
       nav(`/transcriptions/${t.id}`);
     } catch (e: any) {
-      setError(e?.message ?? "Ошибка загрузки");
+      if (axios.isCancel?.(e) || e?.name === "CanceledError" || e?.code === "ERR_CANCELED") {
+        setError("Загрузка отменена.");
+      } else {
+        setError(e?.message ?? "Ошибка загрузки");
+      }
       setProgress(null);
+    } finally {
+      abortRef.current = null;
     }
+  }
+
+  function cancelUpload() {
+    abortRef.current?.abort();
   }
 
   async function handleFile(file: File) {
@@ -42,6 +84,13 @@ export default function UploadPage() {
       setMode("text");
       setTitle(file.name.replace(/\.[^.]+$/, ""));
       setText(await file.text());
+      return;
+    }
+    if (!isMediaFile(file)) {
+      setMode("media");
+      setError(
+        `Неподдерживаемый формат «${file.name}». Разрешены аудио/видео: ${MEDIA_EXTENSIONS.join(", ")} — или текстовая расшифровка.`,
+      );
       return;
     }
     await uploadMedia(file);
@@ -73,19 +122,25 @@ export default function UploadPage() {
         subtitle="Загрузите запись или добавьте готовую расшифровку для протокола и поручений."
       />
 
-      <div className="inline-flex rounded-lg border border-border bg-surface p-1 shadow-soft">
+      <SystemHealthNotice />
+
+      <div className="inline-flex rounded-lg border border-border bg-surface p-1 shadow-1" role="tablist" aria-label="Тип загрузки">
         <button
-          className={clsx("btn px-4 py-2", mode === "media" ? "bg-accent text-accent-fg" : "text-muted hover:bg-elevated")}
+          role="tab"
+          aria-selected={mode === "media"}
+          className={clsx("btn px-4", mode === "media" ? "bg-accent text-accent-fg" : "text-muted hover:bg-elevated")}
           onClick={() => setMode("media")}
         >
-          <FileAudio className="h-4 w-4" />
+          <FileAudio className="h-4 w-4" aria-hidden />
           Запись
         </button>
         <button
-          className={clsx("btn px-4 py-2", mode === "text" ? "bg-accent text-accent-fg" : "text-muted hover:bg-elevated")}
+          role="tab"
+          aria-selected={mode === "text"}
+          className={clsx("btn px-4", mode === "text" ? "bg-accent text-accent-fg" : "text-muted hover:bg-elevated")}
           onClick={() => setMode("text")}
         >
-          <ClipboardPaste className="h-4 w-4" />
+          <ClipboardPaste className="h-4 w-4" aria-hidden />
           Текст
         </button>
       </div>
@@ -138,17 +193,38 @@ export default function UploadPage() {
 
           {progress !== null && (
             <div className="mt-5">
-              <div className="mb-2 flex items-center gap-2 text-sm text-muted">
-                {progress < 100 ? <Spinner /> : <FileAudio className="h-4 w-4" />}
-                {progress < 100 ? `Загрузка ${progress}%` : "Запуск распознавания..."}
+              <div className="mb-2 flex items-center gap-2 text-sm text-muted" aria-live="polite">
+                {progress < 100 ? <Spinner /> : <FileAudio className="h-4 w-4" aria-hidden />}
+                <span className="tabular-nums">
+                  {progress < 100 ? `Загрузка ${progress}%` : "Запуск распознавания…"}
+                </span>
+                {uploading && (
+                  <button
+                    className="ml-auto inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-muted hover:bg-danger/10 hover:text-danger"
+                    onClick={cancelUpload}
+                  >
+                    <X className="h-3.5 w-3.5" aria-hidden /> Отменить
+                  </button>
+                )}
               </div>
-              <div className="h-2 overflow-hidden rounded-full bg-border">
+              <div
+                className="h-2 overflow-hidden rounded-full bg-border"
+                role="progressbar"
+                aria-valuenow={progress}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-label="Прогресс загрузки"
+              >
                 <div className="h-full bg-accent transition-all" style={{ width: `${progress}%` }} />
               </div>
             </div>
           )}
 
-          {error && mode === "media" && <p className="mt-4 text-sm text-rose-500">{error}</p>}
+          {error && mode === "media" && (
+            <p role="alert" className="mt-4 text-sm text-danger">
+              {error}
+            </p>
+          )}
         </Card>
 
         <Card className={clsx(mode !== "text" && "opacity-75")}>
@@ -202,7 +278,11 @@ export default function UploadPage() {
             </button>
           </div>
 
-          {error && mode === "text" && <p className="mt-4 text-sm text-rose-500">{error}</p>}
+          {error && mode === "text" && (
+            <p role="alert" className="mt-4 text-sm text-danger">
+              {error}
+            </p>
+          )}
         </Card>
       </div>
     </div>

@@ -2,7 +2,7 @@ import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { FileText, ChevronRight, ListChecks, CalendarDays, Upload } from "lucide-react";
 import { api } from "@/lib/api";
-import { PageHeader, Empty, Spinner } from "@/components/ui";
+import { PageHeader, Empty, Skeleton } from "@/components/ui";
 import { fmtDate } from "@/lib/utils";
 
 export default function ProtocolsListPage() {
@@ -16,8 +16,16 @@ export default function ProtocolsListPage() {
         subtitle="Сформированные протоколы совещаний и связанные с ними поручения."
       />
       {isLoading ? (
-        <div className="flex justify-center py-16">
-          <Spinner className="h-6 w-6 text-accent" />
+        <div className="grid gap-3 sm:grid-cols-2">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="card flex items-center gap-4 p-4">
+              <Skeleton className="h-12 w-12 shrink-0 rounded-lg" />
+              <div className="flex-1 space-y-2">
+                <Skeleton className="h-4 w-2/3" />
+                <Skeleton className="h-3 w-1/2" />
+              </div>
+            </div>
+          ))}
         </div>
       ) : !data?.length ? (
         <Empty

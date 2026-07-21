@@ -7,7 +7,7 @@ import httpx
 
 from app.services.openrouter_asr import _parse_transcript, _ts_to_seconds
 from app.services import dify_client
-from app.services.dify_client import run_command, _run_streaming, _safe_json_loads
+from app.services.dify_client import run_command, _run_streaming, safe_json_loads
 from app.services import exporter
 
 
@@ -93,15 +93,15 @@ def test_task_belongs_to_matches_by_name():
 
 
 def test_safe_json_loads_plain():
-    assert _safe_json_loads('{"a": 1}') == {"a": 1}
+    assert safe_json_loads('{"a": 1}') == {"a": 1}
 
 
 def test_safe_json_loads_fenced():
-    assert _safe_json_loads('```json\n{"a": 1}\n```') == {"a": 1}
+    assert safe_json_loads('```json\n{"a": 1}\n```') == {"a": 1}
 
 
 def test_safe_json_loads_embedded():
-    assert _safe_json_loads('Вот результат: {"a": 1} конец') == {"a": 1}
+    assert safe_json_loads('Вот результат: {"a": 1} конец') == {"a": 1}
 
 
 @pytest.mark.anyio

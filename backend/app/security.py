@@ -30,6 +30,7 @@ _PUBLIC_API_PATHS = {
     "/api/auth/login",
     "/api/auth/me",
     "/api/auth/logout",
+    "/api/auth/demo",
     "/api/max/webhook",
 }
 

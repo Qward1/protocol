@@ -11,7 +11,7 @@ import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -23,12 +23,15 @@ from app.security import auth_dependency
 from app.services import reminders
 from app.services.media import ffmpeg_available
 from app.api import (
+    analytics as analytics_api,
     auth as auth_api,
     export,
     library,
     max as max_api,
+    protocol_templates,
     protocols,
     qa,
+    rating_rules,
     search,
     tasks,
     transcriptions,
@@ -69,13 +72,27 @@ class PublicBasePathMiddleware:
 async def lifespan(_: FastAPI):
     init_db()
 
+    from app.db import SessionLocal
+
+    # Лёгкая чистка накопившихся данных при старте (истёкшие сессии, пустые чаты).
+    from app.services.maintenance import run_startup_cleanup
+
+    with SessionLocal() as db:
+        run_startup_cleanup(db)
+
+    # Дефолтные правила рейтинга (п. 4.5.3) — идемпотентно, если таблица пуста.
+    from app.services.analytics import seed_rating_rules
+
+    with SessionLocal() as db:
+        seed_rating_rules(db)
+
     # Начальный администратор (только если включена авторизация пользователей).
     if settings.auth.enabled:
-        from app.db import SessionLocal
-        from app.services.auth import seed_admin
+        from app.services.auth import seed_admin, seed_demo_users
 
         with SessionLocal() as db:
             seed_admin(db)
+            seed_demo_users(db)  # opt-in auth.seed_demo — демо-роли для страницы входа
 
     log.info(
         "%s запущен. Auth=%s, RBAC=%s",
@@ -92,15 +109,24 @@ async def lifespan(_: FastAPI):
 
             await MaxClient().ensure_subscription(settings.max.webhook_public_url)
 
+    # Плановое формирование утренней справки (п. 4.5.2) — единственный новый job,
+    # не зависит от MAX; спит до настроенного времени и сохраняет снимок реестра.
+    brief_task: asyncio.Task | None = None
+    if settings.analytics.morning_brief_enabled:
+        from app.services import morning_brief
+
+        brief_task = asyncio.create_task(morning_brief.brief_loop())
+
     try:
         yield
     finally:
-        if reminder_task:
-            reminder_task.cancel()
-            try:
-                await reminder_task
-            except asyncio.CancelledError:
-                pass
+        for task in (reminder_task, brief_task):
+            if task:
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
 
 
 # Глобальная зависимость: на изменяющих запросах требует X-Api-Key (если включено).
@@ -145,7 +171,10 @@ def health() -> dict:
     }
 
 
-for module in (auth_api, transcriptions, protocols, tasks, qa, search, library, export, max_api):
+for module in (
+    auth_api, transcriptions, protocols, tasks, qa, search, library, export,
+    max_api, protocol_templates, analytics_api, rating_rules,
+):
     app.include_router(module.router)
 
 
@@ -166,15 +195,22 @@ if (_DIST / "index.html").is_file():
     if assets_dir.is_dir():
         app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
 
+    _DIST_RESOLVED = _DIST.resolve()
+
     @app.get("/{full_path:path}", include_in_schema=False)
     async def spa(full_path: str):
         """SPA-фоллбэк: отдаём конкретный файл, иначе index.html (для роутов React Router).
 
-        Маршруты /api/* зарегистрированы выше и матчатся раньше этого catch-all.
+        Маршруты /api/* зарегистрированы выше и матчатся раньше этого catch-all;
+        неизвестный /api/* сюда не должен «проваливаться» HTML-ответом — отдаём 404.
         """
-        candidate = _DIST / full_path
-        if full_path and candidate.is_file():
-            return FileResponse(candidate)
+        if full_path == "api" or full_path.startswith("api/"):
+            raise HTTPException(status_code=404, detail="Not Found")
+        if full_path:
+            candidate = (_DIST / full_path).resolve()
+            # Защита от path traversal: отданный файл обязан остаться внутри dist.
+            if candidate.is_relative_to(_DIST_RESOLVED) and candidate.is_file():
+                return FileResponse(candidate)
         return FileResponse(_DIST / "index.html")
 
     log.info("Фронтенд раздаётся из %s", _DIST)

@@ -16,6 +16,8 @@ from app.db import get_db
 from app.logging_config import get_logger
 from app.models import User
 from app.schemas import (
+    DemoAccountDTO,
+    DemoAccountsResponse,
     LoginRequest,
     LoginResponse,
     MeResponse,
@@ -43,6 +45,12 @@ def login(body: LoginRequest, db: Session = Depends(get_db)):
         user=UserDTO.model_validate(user),
         permissions=auth.role_permissions(user.role),
     )
+
+
+@router.get("/demo", response_model=DemoAccountsResponse)
+def demo_login_accounts():
+    """Демо-учётки для страницы входа (пусто, если auth.seed_demo выключен)."""
+    return DemoAccountsResponse(accounts=[DemoAccountDTO(**a) for a in auth.demo_accounts()])
 
 
 @router.post("/logout")
@@ -101,11 +109,29 @@ def create_user(body: UserCreate, db: Session = Depends(get_db)):
     return user
 
 
+def _is_last_active_admin(db: Session, user: User) -> bool:
+    """True, если ``user`` — единственный активный администратор в системе."""
+    if user.role != auth.ROLE_ADMIN or not user.is_active:
+        return False
+    active_admins = (
+        db.query(User)
+        .filter(User.role == auth.ROLE_ADMIN, User.is_active.is_(True))
+        .count()
+    )
+    return active_admins <= 1
+
+
 @router.patch("/users/{user_id}", response_model=UserDTO, dependencies=[Depends(require_permission("users.manage"))])
 def update_user(user_id: str, body: UserUpdate, db: Session = Depends(get_db)):
     user = db.get(User, user_id)
     if not user:
         raise HTTPException(404, "Пользователь не найден")
+    # Нельзя оставить систему без администратора: запрещаем понижение роли или
+    # деактивацию последнего активного admin (защита симметрична delete_user).
+    removing_admin = body.role is not None and body.role != auth.ROLE_ADMIN
+    deactivating = body.is_active is False
+    if (removing_admin or deactivating) and _is_last_active_admin(db, user):
+        raise HTTPException(400, "Нельзя снять роль или деактивировать последнего администратора")
     if body.role is not None:
         if body.role not in auth.ROLES:
             raise HTTPException(422, f"Неизвестная роль: {body.role}")

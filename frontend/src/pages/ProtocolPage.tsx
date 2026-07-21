@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { useParams, Link } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useParams, useNavigate, Link } from "react-router-dom";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   ScrollText,
   ChevronLeft,
@@ -8,7 +8,11 @@ import {
   FileText,
   CalendarClock,
   ListChecks,
+  MessagesSquare,
   Quote,
+  Pencil,
+  Save,
+  X,
 } from "lucide-react";
 import clsx from "clsx";
 import { api, type Task } from "@/lib/api";
@@ -16,12 +20,53 @@ import { Card, PageHeader, Spinner, Badge, SectionTitle, Avatar, Empty } from "@
 import ExportMenu from "@/components/ExportMenu";
 import JustificationModal from "@/components/JustificationModal";
 import { statusColor, statusDot, deadlineUrgency, deadlineColor } from "@/lib/utils";
+import { useAuth } from "@/lib/auth";
+import { useSelection } from "@/store/selection";
 
 export default function ProtocolPage() {
   const { id = "" } = useParams();
+  const nav = useNavigate();
+  const qc = useQueryClient();
+  const { can } = useAuth();
+  const sel = useSelection();
   const [justifyTask, setJustifyTask] = useState<Task | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState({ title: "", date: "", number: "", body: "" });
 
-  const { data: p } = useQuery({ queryKey: ["protocol", id], queryFn: () => api.getProtocol(id) });
+  const { data: p, isError } = useQuery({
+    queryKey: ["protocol", id],
+    queryFn: () => api.getProtocol(id),
+    retry: false,
+  });
+
+  const save = useMutation({
+    mutationFn: () => api.updateProtocol(id, draft),
+    onSuccess: () => {
+      setEditing(false);
+      qc.invalidateQueries({ queryKey: ["protocol", id] });
+    },
+  });
+
+  const startEdit = () => {
+    if (!p) return;
+    setDraft({ title: p.title, date: p.date, number: p.number, body: p.body });
+    setEditing(true);
+  };
+
+  if (isError) {
+    return (
+      <Empty
+        icon={FileText}
+        title="Протокол не найден или удалён"
+        hint="Возможно, его удалили. Вернитесь к списку протоколов."
+        action={
+          <Link to="/protocols" className="btn-primary">
+            <ChevronLeft className="h-4 w-4" /> Все протоколы
+          </Link>
+        }
+      />
+    );
+  }
 
   if (!p) {
     return (
@@ -49,27 +94,98 @@ export default function ProtocolPage() {
                 Запись
               </Link>
             )}
+            {can("qa.use") && (
+              <button
+                className="btn-ghost"
+                onClick={() => {
+                  sel.setSingle("protocol", p.id);
+                  nav("/chat");
+                }}
+                title="Задать вопрос по этому протоколу"
+              >
+                <MessagesSquare className="h-4 w-4" /> Спросить по протоколу
+              </button>
+            )}
+            {can("protocols.manage") && !editing && (
+              <button className="btn-ghost" onClick={startEdit} title="Редактировать протокол">
+                <Pencil className="h-4 w-4" /> Редактировать
+              </button>
+            )}
             <ExportMenu objectType="protocol" objectId={p.id} name={p.title || "protocol"} />
           </>
         }
       />
 
-      {p.body && (
-        <Card className="mb-6">
-          <div className="whitespace-pre-wrap text-sm leading-relaxed">{p.body}</div>
+      {editing ? (
+        <Card className="mb-6 space-y-4">
+          <div className="grid gap-3 sm:grid-cols-[1fr_auto_auto]">
+            <label className="block">
+              <span className="section-label">Заголовок</span>
+              <input
+                className="input mt-1"
+                value={draft.title}
+                onChange={(e) => setDraft({ ...draft, title: e.target.value })}
+                aria-label="Заголовок протокола"
+              />
+            </label>
+            <label className="block">
+              <span className="section-label">Дата</span>
+              <input
+                className="input mt-1 sm:w-40"
+                value={draft.date}
+                onChange={(e) => setDraft({ ...draft, date: e.target.value })}
+                aria-label="Дата протокола"
+              />
+            </label>
+            <label className="block">
+              <span className="section-label">Номер</span>
+              <input
+                className="input mt-1 sm:w-32"
+                value={draft.number}
+                onChange={(e) => setDraft({ ...draft, number: e.target.value })}
+                aria-label="Номер протокола"
+              />
+            </label>
+          </div>
+          <label className="block">
+            <span className="section-label">Текст протокола</span>
+            <textarea
+              className="input mt-1 min-h-[240px] resize-y whitespace-pre-wrap leading-relaxed"
+              value={draft.body}
+              onChange={(e) => setDraft({ ...draft, body: e.target.value })}
+              aria-label="Текст протокола"
+            />
+          </label>
+          <div className="flex items-center gap-2">
+            <button className="btn-primary" disabled={save.isPending} onClick={() => save.mutate()}>
+              {save.isPending ? <Spinner /> : <Save className="h-4 w-4" />} Сохранить
+            </button>
+            <button className="btn-ghost" disabled={save.isPending} onClick={() => setEditing(false)}>
+              <X className="h-4 w-4" /> Отмена
+            </button>
+            {save.isError && (
+              <span role="alert" className="text-sm text-danger">
+                {(save.error as Error)?.message ?? "Не удалось сохранить"}
+              </span>
+            )}
+          </div>
         </Card>
+      ) : (
+        p.body && (
+          <Card className="mb-6">
+            <div className="max-w-[72ch] whitespace-pre-wrap text-sm leading-relaxed">{p.body}</div>
+          </Card>
+        )
       )}
 
-      <SectionTitle icon={ListChecks} count={p.tasks.length}>
-        Поручения
-      </SectionTitle>
+      <SectionTitle count={p.tasks.length}>Поручения</SectionTitle>
 
       {p.tasks.length === 0 ? (
         <Empty icon={ListChecks} title="В этом протоколе нет поручений" />
       ) : (
         <div className="space-y-3">
           {p.tasks.map((task) => {
-            const urgency = deadlineUrgency(task.deadline, task.status);
+            const urgency = deadlineUrgency(task.deadline, task.status, task.deadline_at);
             return (
               <div key={task.id} className="card overflow-hidden p-0">
                 <div className="flex">
@@ -110,9 +226,19 @@ export default function ProtocolPage() {
 
                     {task.source_fragment && (
                       <div className="mt-3 rounded-lg border border-border bg-elevated/60 p-3 text-sm text-muted">
-                        <span className="section-label flex items-center gap-1">
-                          <Quote className="h-3.5 w-3.5" /> Фрагмент-источник
-                        </span>
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="section-label flex items-center gap-1">
+                            <Quote className="h-3.5 w-3.5" /> Фрагмент-источник
+                          </span>
+                          {p.transcription_id && (
+                            <Link
+                              to={`/transcriptions/${p.transcription_id}?frag=${encodeURIComponent(task.source_fragment)}`}
+                              className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-accent hover:underline"
+                            >
+                              <AudioLines className="h-3.5 w-3.5" /> К фрагменту записи
+                            </Link>
+                          )}
+                        </div>
                         <p className="mt-1 italic">«{task.source_fragment}»</p>
                       </div>
                     )}

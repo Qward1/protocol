@@ -10,17 +10,63 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.db import get_db
-from app.models import Protocol, Task, Transcription
-from app.schemas import GenerateProtocolRequest, ProtocolDTO, ProtocolListItem
+from app.models import (
+    TASK_PRIORITIES,
+    TASK_PRIORITY_NORMAL,
+    TASK_STATUS_NEW,
+    TASK_STATUSES,
+    Protocol,
+    Task,
+    Transcription,
+)
+from app.schemas import GenerateProtocolRequest, ProtocolDTO, ProtocolListItem, ProtocolUpdate
 from app.security import require_permission
 from app.services import dify_client, exec_control, max_handler
+from app.services.deadlines import parse_deadline
 
 router = APIRouter(prefix="/api/protocols", tags=["protocols"])
 
 
+def _normalize_priority(value: object) -> str:
+    """Мягко привести приоритет из ответа Dify к TASK_PRIORITIES.
+
+    Извлечение приоритета в workflow опционально — неизвестное/пустое значение
+    даёт «Обычный», а не ошибку (мягкая деградация внешнего вызова)."""
+    raw = str(value or "").strip().lower()
+    if not raw:
+        return TASK_PRIORITY_NORMAL
+    for priority in TASK_PRIORITIES:
+        if raw == priority.lower():
+            return priority
+    # Терпимо распознаём частые англоязычные/сокращённые варианты от LLM.
+    aliases = {
+        "низкий": ("low", "low priority", "минимальный"),
+        "обычный": ("normal", "medium", "средний", "обычная"),
+        "высокий": ("high", "важный"),
+        "критический": ("critical", "urgent", "срочный", "критично"),
+    }
+    for priority in TASK_PRIORITIES:
+        if raw in aliases.get(priority.lower(), ()):
+            return priority
+    return TASK_PRIORITY_NORMAL
+
+
+def _normalize_status(value: object) -> str:
+    """Мягко привести статус из ответа Dify к TASK_STATUSES.
+
+    Workflow может вернуть «Новое» или «Требует проверки» (см. промпт извлечения);
+    неизвестное/пустое значение даёт «Новое», чтобы поручение не выпало из фильтров
+    дашборда по статусу — тот же принцип мягкой деградации, что и у приоритета."""
+    raw = str(value or "").strip()
+    for status in TASK_STATUSES:
+        if raw.lower() == status.lower():
+            return status
+    return TASK_STATUS_NEW
+
+
 def _apply_dify_protocol(db: Session, protocol: Protocol, result_raw: dict, answer: str) -> None:
     """Распарсить ответ Dify (JSON с метаданными протокола и списком задач)."""
-    data = dify_client._safe_json_loads(answer) if answer else {}
+    data = dify_client.safe_json_loads(answer) if answer else {}
     if not data and isinstance(result_raw, dict):
         data = result_raw
 
@@ -34,13 +80,20 @@ def _apply_dify_protocol(db: Session, protocol: Protocol, result_raw: dict, answ
     for item in tasks:
         if not isinstance(item, dict):
             continue
+        deadline = item.get("deadline") or item.get("due_date") or ""
         db.add(Task(
             protocol_id=protocol.id,
             assignment=item.get("assignment") or item.get("task") or "",
             responsible=item.get("responsible") or "",
             department=item.get("department") or item.get("department_hint") or "",
-            deadline=item.get("deadline") or item.get("due_date") or "",
-            status=item.get("status") or "Новое",
+            deadline=deadline,
+            deadline_at=parse_deadline(deadline),
+            status=_normalize_status(item.get("status")),
+            # Срезы аналитики — опциональны в извлечении; отсутствие -> дефолт/пусто.
+            priority=_normalize_priority(item.get("priority")),
+            location=item.get("location") or "",
+            object=item.get("object") or "",
+            theme=item.get("theme") or "",
             source_fragment=item.get("source_fragment") or "",
             reason_comment=item.get("reason_comment") or "",
             confidence=float(item.get("confidence") or 0.0),
@@ -65,6 +118,16 @@ async def generate_protocol(req: GenerateProtocolRequest, db: Session = Depends(
         inputs={"transcript": t.full_text, "meeting_title": t.filename},
         name_hint=f"protocol_{protocol.id}",
     )
+    # Dify недоступен/не настроен: не сохраняем пустышку, показываем ошибку —
+    # это прямое действие пользователя, а не фоновый вызов (см. CLAUDE.md).
+    if result.raw.get("error") and not result.answer:
+        db.delete(protocol)
+        db.commit()
+        raise HTTPException(
+            502,
+            "Не удалось сгенерировать протокол: сервис Dify недоступен или не настроен. "
+            "Проверьте состояние сервисов на /api/health.",
+        )
     _apply_dify_protocol(db, protocol, result.raw, result.answer)
     if result.files:
         protocol.docx_path = result.files[0]
@@ -106,6 +169,26 @@ def get_protocol(protocol_id: str, db: Session = Depends(get_db)):
     p = db.get(Protocol, protocol_id)
     if not p:
         raise HTTPException(404, "Protocol not found")
+    return p
+
+
+@router.put(
+    "/{protocol_id}", response_model=ProtocolDTO,
+    dependencies=[Depends(require_permission("protocols.manage"))],
+)
+def update_protocol(protocol_id: str, body: ProtocolUpdate, db: Session = Depends(get_db)):
+    """Ручная правка метаданных/текста протокола (title/date/number/body).
+
+    Простая перезапись переданных полей — без истории/аудита. Сохранённые правки
+    автоматически попадают в экспорт: exporter.protocol_to_md читает эти поля из
+    объекта Protocol."""
+    p = db.get(Protocol, protocol_id)
+    if not p:
+        raise HTTPException(404, "Protocol not found")
+    for field, value in body.model_dump(exclude_unset=True).items():
+        setattr(p, field, value)
+    db.commit()
+    db.refresh(p)
     return p
 
 

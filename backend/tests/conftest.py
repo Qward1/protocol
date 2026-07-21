@@ -9,6 +9,8 @@ import os
 import tempfile
 from pathlib import Path
 
+import pytest
+
 _tmp = Path(tempfile.mkdtemp(prefix="do-test-"))
 _cfg = _tmp / "config.yaml"
 _cfg.write_text(
@@ -22,3 +24,9 @@ security:
     encoding="utf-8",
 )
 os.environ["CONFIG_PATH"] = str(_cfg)
+
+
+@pytest.fixture
+def anyio_backend() -> str:
+    """Гоняем anyio-тесты только на asyncio: trio нет в requirements."""
+    return "asyncio"

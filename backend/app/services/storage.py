@@ -27,6 +27,10 @@ def docs_dir() -> Path:
     return _ensure(STORAGE / "docs")
 
 
+def templates_dir() -> Path:
+    return _ensure(STORAGE / "templates")
+
+
 def tmp_dir() -> Path:
     return _ensure(STORAGE / "tmp")
 

@@ -246,7 +246,7 @@ async def retrieve(query: str, top_k: int = 8) -> list[dict[str, Any]]:
         return []
 
 
-def _safe_json_loads(text: str) -> dict[str, Any]:
+def safe_json_loads(text: str) -> dict[str, Any]:
     """Извлечь JSON из ответа LLM (на случай обёртки в ```json ... ```)."""
     text = text.strip()
     fence = re.search(r"```(?:json)?\s*(\{.*\}|\[.*\])\s*```", text, re.DOTALL)
