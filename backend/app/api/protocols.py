@@ -119,7 +119,7 @@ async def generate_protocol(req: GenerateProtocolRequest, db: Session = Depends(
         name_hint=f"protocol_{protocol.id}",
     )
     # Dify недоступен/не настроен: не сохраняем пустышку, показываем ошибку —
-    # это прямое действие пользователя, а не фоновый вызов (см. CLAUDE.md).
+    # это прямое действие пользователя, а не фоновый вызов.
     if result.raw.get("error") and not result.answer:
         db.delete(protocol)
         db.commit()

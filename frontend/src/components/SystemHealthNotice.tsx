@@ -4,8 +4,8 @@ import { api } from "@/lib/api";
 
 /** Онбординг по состоянию системы: если ключевые сервисы не настроены И записей ещё
  *  нет, показываем человекочитаемую карточку «Что не настроено». Данные уже есть в
- *  /api/health — не хватало только UI (см. PLAN 2.7). MAX/execution-control не
- *  показываем: они опциональны по дизайну. */
+ *  /api/health — не хватало только UI. MAX/execution-control не показываем:
+ *  они опциональны по дизайну. */
 export default function SystemHealthNotice() {
   const { data: health } = useQuery({ queryKey: ["health"], queryFn: api.health });
   const { data: transcriptions } = useQuery({ queryKey: ["transcriptions"], queryFn: () => api.listTranscriptions() });

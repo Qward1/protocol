@@ -90,8 +90,8 @@ async def ask(req: QARequest, db: Session = Depends(get_db)):
     context, citations = _build_context(db, req)
     db.add(ChatMessage(session_id=session.id, role="user", content=req.question))
 
-    # Классификатор Dify маршрутизирует по sys.query (см. dify/WORKFLOW.md). Если
-    # положить в query весь контекст встречи, классификатор «перетягивает» запрос в
+    # Классификатор Dify маршрутизирует по sys.query. Если положить в query весь
+    # контекст встречи, классификатор «перетягивает» запрос в
     # ветку извлечения протокола (наблюдалось на живом workflow). Поэтому в маршрутную
     # строку кладём только короткий вопрос — полный контекст узел «Вопросы» читает из
     # inputs.context ({{#start.context#}}), а не из query.

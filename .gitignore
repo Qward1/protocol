@@ -25,6 +25,9 @@ node_modules/
 dist/
 .vite/
 *.local
+*.tsbuildinfo
+frontend/vite.config.js
+frontend/vite.config.d.ts
 
 # --- Логи / временные ---
 *.log
@@ -36,15 +39,26 @@ tmp/
 # --- IDE / ОС ---
 .idea/
 .vscode/
-.claude/settings.local.json
+.claude/
 .DS_Store
 Thumbs.db
 
-# --- AI assistant instructions (local only) ---
+# --- Инструкции ИИ-ассистентов (только локально) ---
 CLAUDE.md
 AGENTS.md
 .cursorrules
 
-# --- Dify workflow templates (kept locally, not in remote) ---
+# --- Dify workflow (хранится локально, не в репозитории) ---
 dify/*.yml
 dify/*.yaml
+
+# --- Скриншоты / артефакты QA и MCP (только локально) ---
+/*.png
+/*.jpg
+/*.jpeg
+/*.gif
+.playwright-mcp/
+
+# --- Markdown: в репозиторий попадает только корневой README.md ---
+*.md
+!/README.md
