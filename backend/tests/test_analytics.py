@@ -16,6 +16,7 @@ from fastapi.testclient import TestClient
 from app.db import SessionLocal
 from app.main import app
 from app.models import (
+    TASK_STATUS_CLOSED,
     TASK_STATUS_DONE,
     TASK_STATUS_NEW,
     TASK_STATUS_REVIEW,
@@ -43,13 +44,29 @@ def test_compute_kpis_is_a_partition():
         _task(status=TASK_STATUS_NEW),                        # in_work (нет срока)
     ]
     kpis = analytics.compute_kpis(tasks, NOW)
-    assert kpis == {"total": 5, "in_work": 2, "done": 1, "overdue": 2}
-    assert kpis["total"] == kpis["in_work"] + kpis["done"] + kpis["overdue"]
+    assert kpis == {"total": 5, "in_work": 2, "done": 1, "overdue": 2, "closed": 0}
+    assert kpis["total"] == kpis["in_work"] + kpis["done"] + kpis["overdue"] + kpis["closed"]
+
+
+def test_closed_status_is_a_separate_bucket():
+    """«Закрыто» — отдельная категория: не done, не overdue, не in_work."""
+    tasks = [
+        _task(status=TASK_STATUS_DONE),
+        _task(status=TASK_STATUS_CLOSED, deadline_at=PAST),  # закрыто, срок в прошлом
+        _task(status=TASK_STATUS_NEW, deadline_at=FUTURE),   # in_work
+    ]
+    kpis = analytics.compute_kpis(tasks, NOW)
+    assert kpis == {"total": 3, "in_work": 1, "done": 1, "overdue": 0, "closed": 1}
 
 
 def test_done_task_is_never_overdue():
     done_past = _task(status=TASK_STATUS_DONE, deadline_at=PAST)
     assert analytics.is_overdue(done_past, NOW) is False
+
+
+def test_closed_task_is_never_overdue():
+    closed_past = _task(status=TASK_STATUS_CLOSED, deadline_at=PAST)
+    assert analytics.is_overdue(closed_past, NOW) is False
 
 
 def test_task_without_deadline_is_not_overdue():
@@ -125,7 +142,7 @@ def test_dashboard_endpoint_kpis_highlights_and_theme_filter(client):
     body = res.json()
 
     # KPI-разбиение по срезу marker детерминировано.
-    assert body["kpis"] == {"total": 3, "in_work": 1, "done": 1, "overdue": 1}
+    assert body["kpis"] == {"total": 3, "in_work": 1, "done": 1, "overdue": 1, "closed": 0}
     # Подсветка: один просроченный + один активный высокоприоритетный.
     assert len(body["highlights"]["overdue"]) == 1
     overdue_task = body["highlights"]["overdue"][0]

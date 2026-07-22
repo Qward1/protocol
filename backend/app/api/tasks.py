@@ -10,7 +10,14 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.db import get_db
 from app.logging_config import get_logger
-from app.models import TASK_STATUS_DONE, TASK_STATUS_REVIEW, Justification, Task, _now
+from app.models import (
+    TASK_STATUS_DONE,
+    TASK_STATUS_REVIEW,
+    TASK_TERMINAL_STATUSES,
+    Justification,
+    Task,
+    _now,
+)
 from app.schemas import (
     JustificationDTO,
     TaskConfirm,
@@ -68,8 +75,9 @@ def list_tasks(request: Request, status: str | None = None, db: Session = Depend
     """Список поручений для дашборда контроля исполнения (фильтр по статусу).
 
     Исполнитель видит только свои поручения (по ФИО/логину), остальные роли — все.
+    Черновики (неподтверждённые поручения из протокола) в реестр не входят.
     """
-    q = db.query(Task)
+    q = db.query(Task).filter(Task.is_draft == False)  # noqa: E712 (SQL-выражение)
     if status:
         q = q.filter(Task.status == status)
     tasks = q.order_by(Task.created_at.desc()).all()
@@ -104,9 +112,24 @@ async def update_task(task_id: str, body: TaskUpdate, db: Session = Depends(get_
     # Срок менялся -> пересчитываем разобранный deadline_at (единый источник истины).
     if "deadline" in updates:
         task.deadline_at = parse_deadline(task.deadline or "")
+    # Перевод в терминальный статус («Выполнено»/«Закрыто») фиксирует момент закрытия
+    # — нужно для рейтинга (в срок/с опозданием) и чтобы задача выпала из напоминаний.
+    if "status" in updates and task.status in TASK_TERMINAL_STATUSES and task.closed_at is None:
+        task.closed_at = _now()
     db.commit()
     db.refresh(task)
     return task
+
+
+@router.delete("/{task_id}", dependencies=[Depends(require_permission("tasks.manage"))])
+def delete_task(task_id: str, db: Session = Depends(get_db)):
+    """Удалить поручение безвозвратно (обоснование уходит каскадом)."""
+    task = db.get(Task, task_id)
+    if not task:
+        raise HTTPException(404, "Task not found")
+    db.delete(task)
+    db.commit()
+    return {"deleted": task_id}
 
 
 @router.post(

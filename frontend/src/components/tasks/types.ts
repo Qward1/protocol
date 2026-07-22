@@ -2,8 +2,12 @@ import { TASK_STATUS, type Task } from "@/lib/api";
 
 // Виджеты-фильтры: статусы + «Просрочено» + «В MAX» (последний доступен только
 // как стат-карточка, не как таб). Токены статусов — из общего TASK_STATUS.
-export const FILTERS = ["Все", TASK_STATUS.new, TASK_STATUS.review, TASK_STATUS.done, "Просрочено"] as const;
-export const STATUS_OPTIONS = [TASK_STATUS.new, TASK_STATUS.review, TASK_STATUS.done] as const;
+export const FILTERS = [
+  "Все", TASK_STATUS.new, TASK_STATUS.review, TASK_STATUS.done, TASK_STATUS.closed, "Просрочено",
+] as const;
+export const STATUS_OPTIONS = [
+  TASK_STATUS.new, TASK_STATUS.review, TASK_STATUS.done, TASK_STATUS.closed,
+] as const;
 
 export type Filter = (typeof FILTERS)[number] | "В MAX";
 export const ALL_FILTERS: Filter[] = [...FILTERS, "В MAX"];

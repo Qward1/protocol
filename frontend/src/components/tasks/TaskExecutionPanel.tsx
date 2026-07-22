@@ -1,5 +1,5 @@
 import { Check, Send } from "lucide-react";
-import { TASK_STATUS, type Task } from "@/lib/api";
+import { TERMINAL_STATUSES, type Task } from "@/lib/api";
 import { fmtDate } from "@/lib/utils";
 import type { TaskMutations } from "./useTaskMutations";
 
@@ -56,7 +56,7 @@ export function TaskExecutionPanel({
             >
               <Send className="h-4 w-4" /> На проверку
             </button>
-            {canManage && task.status !== TASK_STATUS.done && (
+            {canManage && !TERMINAL_STATUSES.includes(task.status) && (
               <button className="btn-primary" disabled={confirm.isPending} onClick={() => confirm.mutate(task.id)}>
                 <Check className="h-4 w-4" /> Подтвердить
               </button>

@@ -466,6 +466,74 @@ def test_notify_endpoint_delegates_to_send_max(client):
     assert "MAX не настроен" in res.json()["detail"]
 
 
+def test_generated_tasks_are_drafts_until_confirmed(client, monkeypatch):
+    """Поручения из протокола — черновики: не в реестре, пока не подтверждены."""
+    from app.services import dify_client
+
+    tr = client.post(
+        "/api/transcriptions/text",
+        json={"title": "Планёрка", "text": "[00:00] Иванов: подготовить отчёт"},
+    ).json()
+
+    async def fake_run(*args, **kwargs):
+        return dify_client.DifyResult(
+            answer='{"meeting_title": "Планёрка", "tasks": ['
+            '{"assignment": "Подготовить отчёт", "responsible": "Иванов"}]}',
+            raw={},
+        )
+
+    monkeypatch.setattr(dify_client, "run_command", fake_run)
+
+    before = len(client.get("/api/tasks").json())
+    p = client.post("/api/protocols", json={"transcription_id": tr["id"]}).json()
+
+    # Черновик виден в самом протоколе, помечен is_draft.
+    assert len(p["tasks"]) == 1
+    assert p["tasks"][0]["is_draft"] is True
+    # Но в реестр активных ещё не попал.
+    assert len(client.get("/api/tasks").json()) == before
+
+    # Подтверждение переводит черновики в реестр.
+    res = client.post(f"/api/protocols/{p['id']}/confirm-tasks")
+    assert res.status_code == 200
+    assert res.json()["tasks"][0]["is_draft"] is False
+    assert len(client.get("/api/tasks").json()) == before + 1
+
+    # Повторное подтверждение идемпотентно (черновиков больше нет).
+    assert client.post(f"/api/protocols/{p['id']}/confirm-tasks").status_code == 200
+    assert len(client.get("/api/tasks").json()) == before + 1
+
+
+def test_confirm_tasks_404_on_unknown_protocol(client):
+    assert client.post("/api/protocols/no-such-id/confirm-tasks").status_code == 404
+
+
+def test_delete_task(client):
+    task_id = _make_task()
+    assert client.get(f"/api/tasks/{task_id}").status_code == 200
+    res = client.delete(f"/api/tasks/{task_id}")
+    assert res.status_code == 200
+    assert res.json() == {"deleted": task_id}
+    assert client.get(f"/api/tasks/{task_id}").status_code == 404
+    # Удаление несуществующего — 404.
+    assert client.delete(f"/api/tasks/{task_id}").status_code == 404
+
+
+def test_close_without_execution_sets_closed_at(client):
+    """Статус «Закрыто» проставляет closed_at и не считается просроченным."""
+    task_id = _make_task(deadline="01.01.2020 12:00")  # срок в прошлом
+    res = client.patch(f"/api/tasks/{task_id}", json={"status": "Закрыто"})
+    assert res.status_code == 200
+    data = res.json()
+    assert data["status"] == "Закрыто"
+    assert data["closed_at"] is not None
+
+    # Закрытая без исполнения задача не попадает в «Просрочено» дашборда.
+    analytics = client.get("/api/analytics/dashboard").json()
+    overdue_ids = [t["id"] for t in analytics["highlights"]["overdue"]]
+    assert task_id not in overdue_ids
+
+
 def test_protocol_update(client):
     """PUT /api/protocols/{id}: частичное обновление метаданных/текста протокола.
 

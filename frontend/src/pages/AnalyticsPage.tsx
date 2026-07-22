@@ -151,8 +151,8 @@ export default function AnalyticsPage() {
 
       {/* KPI */}
       {isLoading ? (
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-          {Array.from({ length: 4 }).map((_, i) => (
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+          {Array.from({ length: 5 }).map((_, i) => (
             <div key={i} className="card p-4">
               <Skeleton className="h-8 w-16" />
               <Skeleton className="mt-2 h-3 w-24" />
@@ -160,10 +160,11 @@ export default function AnalyticsPage() {
           ))}
         </div>
       ) : (
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
           <Kpi label="Всего" value={data?.kpis.total ?? 0} dot="bg-accent" />
           <Kpi label="В работе" value={data?.kpis.in_work ?? 0} dot="bg-info" />
           <Kpi label="Исполнено" value={data?.kpis.done ?? 0} dot="bg-success" />
+          <Kpi label="Закрыто" value={data?.kpis.closed ?? 0} dot="bg-muted" />
           <Kpi label="Просрочено" value={data?.kpis.overdue ?? 0} dot="bg-danger" />
         </div>
       )}
@@ -279,10 +280,11 @@ function BriefContent({ brief }: { brief: MorningBrief }) {
         <span>сформирована {fmtDate(brief.generated_at)}</span>
       </p>
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
         <MiniStat label="Всего" value={brief.kpis.total} />
         <MiniStat label="В работе" value={brief.kpis.in_work} />
         <MiniStat label="Исполнено" value={brief.kpis.done} />
+        <MiniStat label="Закрыто" value={brief.kpis.closed ?? 0} />
         <MiniStat label="Просрочено" value={brief.kpis.overdue} tone="text-danger" />
       </div>
 

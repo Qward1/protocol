@@ -100,7 +100,7 @@ def _brief_to_dto(brief: MorningBrief) -> MorningBriefDTO:
         id=brief.id,
         as_of=brief.as_of,
         generated_at=brief.generated_at,
-        kpis=payload.get("kpis") or {"total": 0, "in_work": 0, "done": 0, "overdue": 0},
+        kpis=payload.get("kpis") or {"total": 0, "in_work": 0, "done": 0, "overdue": 0, "closed": 0},
         status_counts=payload.get("status_counts") or {},
         overdue=payload.get("overdue") or [],
         priority_soon=payload.get("priority_soon") or [],

@@ -98,6 +98,9 @@ def _apply_dify_protocol(db: Session, protocol: Protocol, result_raw: dict, answ
             reason_comment=item.get("reason_comment") or "",
             confidence=float(item.get("confidence") or 0.0),
             max_username=item.get("max_username") or "",
+            # Поручения из протокола — черновики: в реестр попадают только после
+            # подтверждения (POST /api/protocols/{id}/confirm-tasks).
+            is_draft=True,
         ))
 
 
@@ -134,16 +137,41 @@ async def generate_protocol(req: GenerateProtocolRequest, db: Session = Depends(
     db.commit()
     db.refresh(protocol)
 
-    # Опционально дублируем поручения во внешний execution-control-service.
-    if exec_control.enabled() and protocol.tasks:
-        await exec_control.push_tasks(list(protocol.tasks))
+    # Поручения создаются черновиками: в реестр, внешний контроль и MAX они уходят
+    # только после подтверждения (confirm_tasks) — см. дизайн шага подтверждения.
+    return protocol
 
-    # Поручения хранятся в локальной БД; опционально отправляем карточки в MAX.
-    for task in protocol.tasks:
+
+@router.post(
+    "/{protocol_id}/confirm-tasks", response_model=ProtocolDTO,
+    dependencies=[Depends(require_permission("protocols.manage"))],
+)
+async def confirm_tasks(protocol_id: str, db: Session = Depends(get_db)):
+    """Подтвердить поручения-черновики протокола: перевести их в реестр активных.
+
+    После правки/удаления черновиков на странице протокола пользователь
+    подтверждает список. Только тогда поручения появляются в реестре и уходят во
+    внешний контроль исполнения и в MAX (перенесено из generate_protocol)."""
+    p = db.get(Protocol, protocol_id)
+    if not p:
+        raise HTTPException(404, "Protocol not found")
+
+    confirmed = [t for t in p.tasks if t.is_draft]
+    for task in confirmed:
+        task.is_draft = False
+    db.commit()
+    db.refresh(p)
+
+    # Опционально дублируем подтверждённые поручения во внешний execution-control.
+    if exec_control.enabled() and confirmed:
+        await exec_control.push_tasks(confirmed)
+
+    # Опционально отправляем карточки в MAX (по одному подтверждённому поручению).
+    for task in confirmed:
         if settings.max.enabled:
             await max_handler.notify_task_assigned(db, task)
 
-    return protocol
+    return p
 
 
 @router.get("", response_model=list[ProtocolListItem], dependencies=[Depends(require_permission("protocols.view"))])

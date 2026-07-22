@@ -1,5 +1,5 @@
 import { TASK_PRIORITY } from "@/lib/api";
-import { TASK_STATUS } from "@/lib/api";
+import { TASK_STATUS, TERMINAL_STATUSES } from "@/lib/api";
 
 /** Токенизация с поддержкой кириллицы (\w в JS не включает кириллицу — режем по не-буквам). */
 function tokenize(text: string): string[] {
@@ -102,6 +102,8 @@ export function statusColor(status: string): string {
       return "bg-success/15 text-success";
     case TASK_STATUS.review:
       return "bg-warning/15 text-warning";
+    case TASK_STATUS.closed:
+      return "bg-elevated text-muted"; // закрыто без исполнения — нейтральный тон
     default:
       return "bg-info/15 text-info";
   }
@@ -114,6 +116,8 @@ export function statusDot(status: string): string {
       return "bg-success";
     case TASK_STATUS.review:
       return "bg-warning";
+    case TASK_STATUS.closed:
+      return "bg-muted";
     default:
       return "bg-info";
   }
@@ -151,7 +155,7 @@ export function deadlineUrgency(
   status: string,
   deadlineAt?: string | null,
 ): "none" | "ok" | "soon" | "overdue" {
-  if (status === TASK_STATUS.done) return "none";
+  if (TERMINAL_STATUSES.includes(status)) return "none";
   const date = deadlineDate(deadline, deadlineAt);
   if (!date) return "none";
   const days = (date.getTime() - Date.now()) / 86_400_000;

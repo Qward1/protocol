@@ -15,8 +15,10 @@ from sqlalchemy.orm import Query, Session
 from app.models import (
     TASK_ELEVATED_PRIORITIES,
     TASK_PRIORITIES,
+    TASK_STATUS_CLOSED,
     TASK_STATUS_DONE,
     TASK_STATUSES,
+    TASK_TERMINAL_STATUSES,
     RatingRule,
     Task,
     _now,
@@ -80,14 +82,19 @@ def apply_filters(query: Query, filters: TaskFilters) -> Query:
 
 
 def filtered_tasks(db: Session, filters: TaskFilters) -> list[Task]:
-    """Список поручений под фильтром (детерминированный порядок — по created_at)."""
-    return apply_filters(db.query(Task), filters).order_by(Task.created_at.desc()).all()
+    """Список поручений под фильтром (детерминированный порядок — по created_at).
+
+    Черновики (неподтверждённые поручения из протокола) в аналитику не входят."""
+    query = db.query(Task).filter(Task.is_draft == False)  # noqa: E712 (SQL-выражение)
+    return apply_filters(query, filters).order_by(Task.created_at.desc()).all()
 
 
 def is_overdue(task: Task, now: datetime) -> bool:
-    """Просрочено: не выполнено и разобранный срок в прошлом (единый критерий 4.5)."""
+    """Просрочено: не завершено и разобранный срок в прошлом (единый критерий 4.5).
+
+    Завершённые (терминальные) — «Выполнено» и «Закрыто» — не просрочены."""
     return (
-        task.status != TASK_STATUS_DONE
+        task.status not in TASK_TERMINAL_STATUSES
         and task.deadline_at is not None
         and task.deadline_at < now
     )
@@ -116,15 +123,16 @@ def is_elevated(task: Task) -> bool:
 
 
 def compute_kpis(tasks: list[Task], now: datetime) -> dict[str, int]:
-    """Ключевые показатели-разбиение: total = in_work + done + overdue.
+    """Ключевые показатели-разбиение: total = in_work + done + overdue + closed.
 
-    Каждое поручение попадает ровно в одну категорию: выполнено / просрочено /
-    в работе (не выполнено и срок не прошёл либо не задан)."""
+    Каждое поручение попадает ровно в одну категорию: выполнено / закрыто без
+    исполнения / просрочено / в работе (не завершено и срок не прошёл либо не задан)."""
     total = len(tasks)
     done = sum(1 for t in tasks if t.status == TASK_STATUS_DONE)
+    closed = sum(1 for t in tasks if t.status == TASK_STATUS_CLOSED)
     overdue = sum(1 for t in tasks if is_overdue(t, now))
-    in_work = total - done - overdue
-    return {"total": total, "in_work": in_work, "done": done, "overdue": overdue}
+    in_work = total - done - closed - overdue
+    return {"total": total, "in_work": in_work, "done": done, "overdue": overdue, "closed": closed}
 
 
 # Ранг приоритета для сортировки подсветки (больше = важнее).
@@ -135,7 +143,7 @@ def compute_highlights(tasks: list[Task], now: datetime) -> dict[str, list[Task]
     """Просроченные и активные приоритетные поручения для блока подсветки (4.5.4)."""
     overdue = [t for t in tasks if is_overdue(t, now)]
     overdue.sort(key=lambda t: (t.deadline_at or datetime.max))
-    priority = [t for t in tasks if is_elevated(t) and t.status != TASK_STATUS_DONE]
+    priority = [t for t in tasks if is_elevated(t) and t.status not in TASK_TERMINAL_STATUSES]
     priority.sort(
         key=lambda t: (-_PRIORITY_RANK.get(t.priority, 0), t.deadline_at or datetime.max)
     )
@@ -277,7 +285,12 @@ def build_brief(db: Session, as_of: datetime, previous_payload: dict | None = No
     просроченные, приоритетные с приближающимся сроком, изменения с прошлой
     справки. ``state`` хранит id-множества для расчёта дельты в следующей справке.
     """
-    tasks = db.query(Task).order_by(Task.created_at.desc()).all()
+    tasks = (
+        db.query(Task)
+        .filter(Task.is_draft == False)  # noqa: E712 (SQL-выражение)
+        .order_by(Task.created_at.desc())
+        .all()
+    )
 
     status_counts: dict[str, int] = {status: 0 for status in TASK_STATUSES}
     for task in tasks:

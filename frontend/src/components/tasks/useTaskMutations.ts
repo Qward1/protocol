@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { api, type Task } from "@/lib/api";
+import { api, TASK_STATUS, type Task } from "@/lib/api";
 import { useToast } from "@/components/ui";
 
 /** Колбэки для состояния страницы (закрыть форму правки, очистить поле исполнения). */
@@ -55,7 +55,25 @@ export function useTaskMutations({ onUpdated, onExecutionSubmitted }: Callbacks 
     onError: fail("MAX не принял сообщение"),
   });
 
-  return { update, submitExecution, confirm, sendMax };
+  const close = useMutation({
+    mutationFn: (id: string) => api.updateTask(id, { status: TASK_STATUS.closed }),
+    onSuccess: () => {
+      toast("Поручение закрыто без исполнения");
+      invalidate();
+    },
+    onError: fail("Не удалось закрыть поручение"),
+  });
+
+  const remove = useMutation({
+    mutationFn: (id: string) => api.deleteTask(id),
+    onSuccess: () => {
+      toast("Поручение удалено");
+      invalidate();
+    },
+    onError: fail("Не удалось удалить поручение"),
+  });
+
+  return { update, submitExecution, confirm, sendMax, close, remove };
 }
 
 export type TaskMutations = ReturnType<typeof useTaskMutations>;

@@ -19,6 +19,7 @@ import { api, type Task } from "@/lib/api";
 import { Card, PageHeader, Spinner, Badge, SectionTitle, Avatar, Empty } from "@/components/ui";
 import ExportMenu from "@/components/ExportMenu";
 import JustificationModal from "@/components/JustificationModal";
+import { DraftTasksPanel } from "@/components/tasks/DraftTasksPanel";
 import { statusColor, statusDot, deadlineUrgency, deadlineColor } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
 import { useSelection } from "@/store/selection";
@@ -76,6 +77,13 @@ export default function ProtocolPage() {
     );
   }
 
+  const canManageTasks = can("tasks.manage");
+  // Черновики (неподтверждённые) отделены от активных поручений: черновики правятся
+  // и подтверждаются отдельной панелью, активные показываются в режиме «только чтение».
+  const draftTasks = p.tasks.filter((t) => t.is_draft);
+  const activeTasks = p.tasks.filter((t) => !t.is_draft);
+  const showDrafts = canManageTasks && draftTasks.length > 0;
+
   return (
     <div>
       <Link to="/protocols" className="mb-3 inline-flex items-center gap-1 text-sm font-medium text-muted hover:text-fg">
@@ -85,7 +93,7 @@ export default function ProtocolPage() {
       <PageHeader
         icon={FileText}
         title={p.title || "Протокол"}
-        subtitle={`${p.date || "дата не указана"}${p.number ? ` · № ${p.number}` : ""} · ${p.tasks.length} поручений`}
+        subtitle={`${p.date || "дата не указана"}${p.number ? ` · № ${p.number}` : ""} · ${activeTasks.length} поручений`}
         actions={
           <>
             {p.transcription_id && (
@@ -178,13 +186,19 @@ export default function ProtocolPage() {
         )
       )}
 
-      <SectionTitle count={p.tasks.length}>Поручения</SectionTitle>
+      {showDrafts && <DraftTasksPanel protocolId={p.id} drafts={draftTasks} />}
 
-      {p.tasks.length === 0 ? (
-        <Empty icon={ListChecks} title="В этом протоколе нет поручений" />
+      <SectionTitle count={activeTasks.length}>Поручения</SectionTitle>
+
+      {activeTasks.length === 0 ? (
+        <Empty
+          icon={ListChecks}
+          title={showDrafts ? "Поручения ещё не подтверждены" : "В этом протоколе нет поручений"}
+          hint={showDrafts ? "Подтвердите черновики выше — они попадут в реестр." : undefined}
+        />
       ) : (
         <div className="space-y-3">
-          {p.tasks.map((task) => {
+          {activeTasks.map((task) => {
             const urgency = deadlineUrgency(task.deadline, task.status, task.deadline_at);
             return (
               <div key={task.id} className="card overflow-hidden p-0">

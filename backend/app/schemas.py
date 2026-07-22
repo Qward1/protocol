@@ -88,6 +88,7 @@ class TaskDTO(BaseModel):
     completion_text: str = ""
     closed_at: datetime | None = None
     notified_at: datetime | None = None
+    is_draft: bool = False
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
@@ -267,12 +268,13 @@ class ExportRequest(BaseModel):
 # --- Аналитический дашборд (п. 4.5) ---
 
 class KpiDTO(BaseModel):
-    """Ключевые показатели-разбиение: total = in_work + done + overdue."""
+    """Ключевые показатели-разбиение: total = in_work + done + overdue + closed."""
 
     total: int
     in_work: int
     done: int
     overdue: int
+    closed: int = 0  # закрыто без исполнения (отдельная категория)
 
 
 class HighlightsDTO(BaseModel):

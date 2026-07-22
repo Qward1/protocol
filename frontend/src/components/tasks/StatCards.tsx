@@ -7,6 +7,7 @@ export interface TaskCounts {
   new: number;
   review: number;
   done: number;
+  closed: number;
   overdue: number;
   sent: number;
 }
@@ -22,7 +23,7 @@ export function StatCards({
   onFilter: (f: Filter) => void;
 }) {
   return (
-    <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+    <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
       <Stat label="Всего" value={counts.total} dot="bg-accent" active={filter === "Все"} onClick={() => onFilter("Все")} />
       <Stat label="Новые" value={counts.new} dot="bg-info"
         active={filter === TASK_STATUS.new} onClick={() => onFilter(TASK_STATUS.new)} />
@@ -30,6 +31,8 @@ export function StatCards({
         active={filter === TASK_STATUS.review} onClick={() => onFilter(TASK_STATUS.review)} />
       <Stat label="Выполнено" value={counts.done} dot="bg-success"
         active={filter === TASK_STATUS.done} onClick={() => onFilter(TASK_STATUS.done)} />
+      <Stat label="Закрыто" value={counts.closed} dot="bg-muted"
+        active={filter === TASK_STATUS.closed} onClick={() => onFilter(TASK_STATUS.closed)} />
       <Stat label="Просрочено" value={counts.overdue} dot="bg-danger"
         active={filter === "Просрочено"} onClick={() => onFilter("Просрочено")} />
       <Stat label="В MAX" value={counts.sent} dot="bg-accent/60"

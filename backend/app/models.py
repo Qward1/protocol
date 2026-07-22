@@ -26,7 +26,13 @@ def _uuid() -> str:
 TASK_STATUS_NEW = "Новое"
 TASK_STATUS_REVIEW = "Требует проверки"
 TASK_STATUS_DONE = "Выполнено"
-TASK_STATUSES: tuple[str, ...] = (TASK_STATUS_NEW, TASK_STATUS_REVIEW, TASK_STATUS_DONE)
+TASK_STATUS_CLOSED = "Закрыто"  # закрыто без исполнения (не выполнено)
+TASK_STATUSES: tuple[str, ...] = (
+    TASK_STATUS_NEW, TASK_STATUS_REVIEW, TASK_STATUS_DONE, TASK_STATUS_CLOSED,
+)
+# Терминальные статусы: задача завершена и выпадает из «в работе»/«просрочено» и
+# из напоминаний. «Выполнено» — исполнено, «Закрыто» — снято без исполнения.
+TASK_TERMINAL_STATUSES: frozenset[str] = frozenset({TASK_STATUS_DONE, TASK_STATUS_CLOSED})
 
 # Приоритет поручения (аналитика/подсветка, п. 4.5). Единый источник правды —
 # как и статусы: значение по умолчанию Task.priority, валидация в schemas.TaskUpdate,
@@ -150,6 +156,10 @@ class Task(Base):
     # если строку не удалось распознать.
     deadline_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     status: Mapped[str] = mapped_column(String, default=TASK_STATUS_NEW)  # см. TASK_STATUSES
+    # Черновик: поручение сформировано из протокола, но ещё не подтверждено и не
+    # попало в реестр активных. Исключается из списка задач, аналитики и напоминаний
+    # до подтверждения (protocols.confirm_tasks переводит is_draft -> False).
+    is_draft: Mapped[bool] = mapped_column(Boolean, default=False)
     # Срезы для аналитического дашборда и фильтров (п. 4.5). priority — из
     # TASK_PRIORITIES; location/object/theme — свободный текст, как department.
     priority: Mapped[str] = mapped_column(String, default=TASK_PRIORITY_NORMAL)

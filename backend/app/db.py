@@ -46,6 +46,8 @@ _TASK_ADDED_COLUMNS = {
     "location": "VARCHAR DEFAULT ''",
     "object": "VARCHAR DEFAULT ''",
     "theme": "VARCHAR DEFAULT ''",
+    # Черновик поручения (шаг подтверждения перед попаданием в реестр).
+    "is_draft": "BOOLEAN DEFAULT 0",
 }
 
 

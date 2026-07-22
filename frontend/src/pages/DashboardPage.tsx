@@ -83,6 +83,7 @@ export default function DashboardPage() {
     new: tasks?.filter((t) => t.status === TASK_STATUS.new).length ?? 0,
     review: tasks?.filter((t) => t.status === TASK_STATUS.review).length ?? 0,
     done: tasks?.filter((t) => t.status === TASK_STATUS.done).length ?? 0,
+    closed: tasks?.filter((t) => t.status === TASK_STATUS.closed).length ?? 0,
     overdue: tasks?.filter(isOverdue).length ?? 0,
     sent: tasks?.filter(isSentToMax).length ?? 0,
   };

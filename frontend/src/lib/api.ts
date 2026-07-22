@@ -124,6 +124,7 @@ export interface Task {
   completion_text: string;
   closed_at?: string | null;
   notified_at?: string | null;
+  is_draft: boolean; // черновик: поручение из протокола ещё не подтверждено (не в реестре)
   created_at: string;
 }
 
@@ -133,7 +134,10 @@ export const TASK_STATUS = {
   new: "Новое",
   review: "Требует проверки",
   done: "Выполнено",
+  closed: "Закрыто",
 } as const;
+// Терминальные статусы (задача завершена) — зеркало TASK_TERMINAL_STATUSES.
+export const TERMINAL_STATUSES: string[] = [TASK_STATUS.done, TASK_STATUS.closed];
 export type TaskStatus = (typeof TASK_STATUS)[keyof typeof TASK_STATUS];
 
 // Приоритеты поручения — зеркало backend/app/models.py TASK_PRIORITIES. Порядок —
@@ -157,6 +161,7 @@ export interface Kpis {
   in_work: number;
   done: number;
   overdue: number;
+  closed: number;
 }
 
 export interface RatingBreakdown {
@@ -406,6 +411,8 @@ export const api = {
   getProtocol: (id: string) => http.get<Protocol>(`/api/protocols/${id}`).then((r) => r.data),
   updateProtocol: (id: string, patch: ProtocolUpdate) =>
     http.put<Protocol>(`/api/protocols/${id}`, patch).then((r) => r.data),
+  confirmProtocolTasks: (id: string) =>
+    http.post<Protocol>(`/api/protocols/${id}/confirm-tasks`).then((r) => r.data),
 
   deleteTranscription: (id: string) =>
     http.delete(`/api/transcriptions/${id}`).then((r) => r.data),
@@ -420,6 +427,8 @@ export const api = {
     http.get<Task[]>("/api/tasks", { params: { status } }).then((r) => r.data),
   updateTask: (taskId: string, patch: Partial<Task>) =>
     http.patch<Task>(`/api/tasks/${taskId}`, patch).then((r) => r.data),
+  deleteTask: (taskId: string) =>
+    http.delete<{ deleted: string }>(`/api/tasks/${taskId}`).then((r) => r.data),
   submitExecution: (taskId: string, completion_text: string) =>
     http.post<Task>(`/api/tasks/${taskId}/execution`, { completion_text }).then((r) => r.data),
   confirmTask: (taskId: string, notify_max = false) =>

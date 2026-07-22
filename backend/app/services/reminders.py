@@ -17,15 +17,14 @@ import asyncio
 from app.config import settings
 from app.db import SessionLocal
 from app.logging_config import get_logger
-from app.models import TASK_STATUS_DONE, Task, _now
+from app.models import TASK_TERMINAL_STATUSES, Task, _now
 from app.services.deadlines import parse_deadline
 from app.services.max_client import MaxClient, confirmation_keyboard
 
 log = get_logger("reminders")
 
-# Статусы, при которых напоминать уже не нужно. Единый источник — models.TASK_STATUSES;
-# закрытый статус ровно один («Выполнено»), «Отменённого» в модели нет.
-_CLOSED_STATUSES = {TASK_STATUS_DONE}
+# Статусы, при которых напоминать уже не нужно — терминальные («Выполнено»/«Закрыто»).
+_CLOSED_STATUSES = set(TASK_TERMINAL_STATUSES)
 
 
 def _chat_for(task: Task) -> str:
@@ -62,6 +61,7 @@ async def scan_once() -> int:
         candidates = (
             db.query(Task)
             .filter(Task.reminder_sent.is_(False))
+            .filter(Task.is_draft.is_(False))  # черновики ещё не в работе
             .filter(~Task.status.in_(_CLOSED_STATUSES))
             .all()
         )
